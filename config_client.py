@@ -61,7 +61,7 @@ class ClientConfig:
     # True：识别结果先进原生编辑框，Enter 确认后先存标注再上屏；
     # Esc=放弃：不入标注库，非空转录仍写剪贴板但不自动上屏。False：维持旧行为直接上屏。
     # 菜单栏「编辑框模式」项运行时切换并持久化到 ~/.capswriter/state/editor-mode.json
-    editor_mode = True
+    editor_mode = False
     # 「标记上一条」的全局热键（pynput 格式；仅 macOS 注册）。
     # 2026-08-24：⌥M 会与系统特殊字符输入冲突（打出 μ 等希腊字母），改 ⌃⌥M
     mark_problem_hotkey = '<ctrl>+<alt>+m'
