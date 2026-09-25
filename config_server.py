@@ -11,7 +11,7 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # 服务端配置
 class ServerConfig:
-    addr = '0.0.0.0'
+    addr = '127.0.0.1'
     port = '6016'
 
     # 语音模型选择：
