@@ -63,6 +63,12 @@ clang -std=c11 -Wall -Wextra -O2 -arch arm64 \
     -Wl,-rpath,"@executable_path/../../../.venv/lib" \
     -o "$OUT"
 
+# uv's libpython has an absolute install name; load it through the launcher's @rpath instead.
+PY_INSTALL_NAME="$(otool -D "$PY_LIBSRC" | tail -1)"
+if [[ "$PY_INSTALL_NAME" != "@rpath/$PY_LDLIB" ]]; then
+    install_name_tool -change "$PY_INSTALL_NAME" "@rpath/$PY_LDLIB" "$OUT"
+fi
+
 echo "=== 同步应用图标 ==="
 # 源文件 assets/icon/app-icon.icns 为准，拷入 bundle Resources（Info.plist 已声明 CFBundleIconFile=app-icon）
 ICON_SRC="$SCRIPT_DIR/assets/icon/app-icon.icns"
