@@ -1,0 +1,276 @@
+cwd = "."
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py"
+timeout = 900
+
+# Not listed, because no behaviour can observe them (equivalent mutants):
+# - work_handler `work.live and` in the tick condition: with one client, live_tick() on hold
+#   packets finds no due task and returns None; the guard only saves work on the hold path.
+# - result_processor `if Config.dictation_mode == 'live':` around hide(): hide() on a panel
+#   that was never shown does nothing; the guard only keeps the hold path free of extra work.
+
+[[mutation]]
+name = "recorder data branch sends live=False"
+file = "core/client/audio/recorder.py"
+old  = '''live=Config.dictation_mode == 'live',
+                    )
+                    asyncio.create_task(self._send_message(message))
+                    
+                elif task['type'] == 'finish':'''
+new  = '''live=False,
+                    )
+                    asyncio.create_task(self._send_message(message))
+                    
+                elif task['type'] == 'finish':'''
+
+[[mutation]]
+name = "recorder cache-flush branch sends live=False"
+file = "core/client/audio/recorder.py"
+old  = '''                            live=Config.dictation_mode == 'live','''
+new  = '''                            live=False,'''
+
+[[mutation]]
+name = "recorder final marker sends live=False"
+file = "core/client/audio/recorder.py"
+old  = '''live=Config.dictation_mode == 'live',
+                    )
+                    asyncio.create_task(self._send_message(message))
+                    break'''
+new  = '''live=False,
+                    )
+                    asyncio.create_task(self._send_message(message))
+                    break'''
+
+[[mutation]]
+name = "AudioMessage.from_dict drops live"
+file = "core/protocol.py"
+old  = '''live=data.get('live', False),'''
+new  = '''live=False,'''
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py && HF_HUB_OFFLINE=1 /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_e2e.py"
+
+[[mutation]]
+name = "RecognitionMessage.from_dict drops preview"
+file = "core/protocol.py"
+old  = '''preview=data.get('preview', False),'''
+new  = '''preview=False,'''
+
+[[mutation]]
+name = "RecognitionMessage.from_dict drops text_tentative"
+file = "core/protocol.py"
+old  = '''text_tentative=data.get('text_tentative', ''),'''
+new  = '''text_tentative='','''
+
+[[mutation]]
+name = "ws_recv does not pass live into the non-final Work"
+file = "core/server/connection/ws_recv.py"
+old  = '''            live=msg.live,'''
+new  = '''            live=False,'''
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py && HF_HUB_OFFLINE=1 /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_e2e.py"
+
+[[mutation]]
+name = "pipeline does not feed the live task"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''task.feed(samples)'''
+new  = '''pass'''
+
+[[mutation]]
+name = "pipeline keeps the live task after its final"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''            self.live.pop(work.task_id, None)'''
+new  = '''            pass'''
+
+[[mutation]]
+name = "cleanup keeps the live task of a dropped socket"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''            self.live.pop(task_id, None)'''
+new  = '''            pass'''
+
+[[mutation]]
+name = "preview pass is fed as non-final"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''                is_final=True,'''
+new  = '''                is_final=False,'''
+
+[[mutation]]
+name = "preview pass reuses the real task id"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''task_id=f"{task_id}#live{task.passes}",'''
+new  = '''task_id=task_id,'''
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py && HF_HUB_OFFLINE=1 /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_e2e.py"
+
+[[mutation]]
+name = "a failing pass is not caught by the pipeline"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''        except Exception as exc:'''
+new  = '''        except ZeroDivisionError as exc:'''
+
+[[mutation]]
+name = "an empty preview is still sent"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''        if not committed and not tentative:'''
+new  = '''        if False:'''
+
+[[mutation]]
+name = "work handler never ticks"
+file = "core/server/worker/work_handler.py"
+old  = '''result = self.pipeline.live_tick()'''
+new  = '''result = None'''
+
+[[mutation]]
+name = "work handler ticks with a non-empty buffer"
+file = "core/server/worker/work_handler.py"
+old  = '''if result is None and work.live and self.buffer.is_empty and hasattr'''
+new  = '''if result is None and work.live and hasattr'''
+
+[[mutation]]
+name = "ws_send drops preview"
+file = "core/server/connection/ws_send.py"
+old  = '''preview=result.preview,'''
+new  = '''preview=False,'''
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py && HF_HUB_OFFLINE=1 /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_e2e.py"
+
+[[mutation]]
+name = "ws_send drops text_tentative"
+file = "core/server/connection/ws_send.py"
+old  = '''text_tentative=result.text_tentative,'''
+new  = '''text_tentative='','''
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py && HF_HUB_OFFLINE=1 /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_e2e.py"
+
+[[mutation]]
+name = "ws_send logs preview text"
+file = "core/server/connection/ws_send.py"
+old  = '''if result.source == 'mic' and not result.preview:'''
+new  = '''if result.source == 'mic':'''
+test = "/Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_preview.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_pipeline.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_client.py && /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_worker_scheduling.py && HF_HUB_OFFLINE=1 /Users/qingyun.yuan/code/open-source/CapsWriter-for-macOS/.venv/bin/python tools/test_live_e2e.py"
+
+[[mutation]]
+name = "result_processor does not show the preview"
+file = "core/client/output/result_processor.py"
+old  = '''live_panel.show(message.text, message.text_tentative)'''
+new  = '''pass'''
+
+[[mutation]]
+name = "preview falls through to the non-final path"
+file = "core/client/output/result_processor.py"
+old  = '''live_panel.show(message.text, message.text_tentative)
+            return'''
+new  = '''live_panel.show(message.text, message.text_tentative)'''
+
+[[mutation]]
+name = "final does not hide the panel"
+file = "core/client/output/result_processor.py"
+old  = '''                live_panel.hide()'''
+new  = '''                pass'''
+
+[[mutation]]
+name = "panel is not non-activating"
+file = "core/client/output/live_panel.py"
+old  = '''NSRect(NSPoint(0, 0), size), NSWindowStyleMaskNonactivatingPanel,'''
+new  = '''NSRect(NSPoint(0, 0), size), 0,'''
+
+[[mutation]]
+name = "panel hides on deactivate"
+file = "core/client/output/live_panel.py"
+old  = '''_panel.setHidesOnDeactivate_(False)'''
+new  = '''_panel.setHidesOnDeactivate_(True)'''
+
+[[mutation]]
+name = "panel takes mouse events"
+file = "core/client/output/live_panel.py"
+old  = '''_panel.setIgnoresMouseEvents_(True)'''
+new  = '''_panel.setIgnoresMouseEvents_(False)'''
+
+[[mutation]]
+name = "panel is never ordered front"
+file = "core/client/output/live_panel.py"
+old  = '''    _panel.orderFrontRegardless()  #'''
+new  = '''    pass  #'''
+
+[[mutation]]
+name = "showing the panel activates the app"
+file = "core/client/output/live_panel.py"
+old  = '''    _panel.orderFrontRegardless()  #'''
+new  = '''    _panel.orderFrontRegardless(); __import__('AppKit').NSApp.activateIgnoringOtherApps_(True)  #'''
+
+[[mutation]]
+name = "committed text drawn grey"
+file = "core/client/output/live_panel.py"
+old  = '''NSForegroundColorAttributeName: NSColor.labelColor()})'''
+new  = '''NSForegroundColorAttributeName: NSColor.secondaryLabelColor()})'''
+
+[[mutation]]
+name = "stale auto-hide hides a newer panel"
+file = "core/client/output/live_panel.py"
+old  = '''    if gen == _generation:'''
+new  = '''    if True:'''
+
+[[mutation]]
+name = "agreement needs two passes"
+file = "core/server/worker/live_preview.py"
+old  = '''AGREE = 3 '''
+new  = '''AGREE = 2 '''
+
+[[mutation]]
+name = "holdback of three units"
+file = "core/server/worker/live_preview.py"
+old  = '''HOLDBACK = 4 '''
+new  = '''HOLDBACK = 3 '''
+
+[[mutation]]
+name = "pass every half second"
+file = "core/server/worker/live_preview.py"
+old  = '''INTERVAL = 1.0 '''
+new  = '''INTERVAL = 0.5 '''
+
+[[mutation]]
+name = "no numeral hold"
+file = "core/server/worker/live_preview.py"
+old  = '''while m > 0 and is_numeral(tail[m - 1]) and'''
+new  = '''while False and is_numeral(tail[m - 1]) and'''
+
+[[mutation]]
+name = "no content alignment"
+file = "core/server/worker/live_preview.py"
+old  = '''        if cur_keys[:n] != self.keys:'''
+new  = '''        if False:'''
+
+[[mutation]]
+name = "tentative keeps trailing punctuation"
+file = "core/server/worker/live_preview.py"
+old  = '''while tentative and ukey(tentative[-1]) == 'P':'''
+new  = '''while False:'''
+
+[[mutation]]
+name = "case-sensitive unit keys"
+file = "core/server/worker/live_preview.py"
+old  = '''u.casefold() if'''
+new  = '''u if'''
+
+[[mutation]]
+name = "pass reads only the last second"
+file = "core/server/worker/live_preview.py"
+old  = '''shown = self.agreement.update(transcribe(audio))'''
+new  = '''shown = self.agreement.update(transcribe(audio[-SR:]))'''
+
+[[mutation]]
+name = "next_due advanced after the model call"
+file = "core/server/worker/live_preview.py"
+old  = '''        self.next_due = self._total_samples + INTERVAL * SR
+
+        audio = np.concatenate(self._chunks)
+        shown = self.agreement.update(transcribe(audio))'''
+new  = '''        audio = np.concatenate(self._chunks)
+        shown = self.agreement.update(transcribe(audio))
+        self.next_due = self._total_samples + INTERVAL * SR'''
+
+[[mutation]]
+name = "label height ignores the wrapped text"
+file = "core/client/output/live_panel.py"
+old  = '''    text_h = max(_MIN_LABEL_H, _label.cell().cellSizeForBounds_('''
+new  = '''    text_h = _MIN_LABEL_H or max(_MIN_LABEL_H, _label.cell().cellSizeForBounds_('''
+
+[[mutation]]
+name = "tentative text drawn in the normal colour"
+file = "core/client/output/live_panel.py"
+old  = '''NSForegroundColorAttributeName: NSColor.secondaryLabelColor()}))'''
+new  = '''NSForegroundColorAttributeName: NSColor.labelColor()}))'''
+

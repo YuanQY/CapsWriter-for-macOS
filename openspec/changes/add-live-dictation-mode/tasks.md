@@ -94,27 +94,27 @@ Test notes:
 
 ## 3. Generate tests and implement (four lanes in parallel)
 
-- [ ] 3A.1 Write `tools/test_live_preview.py` and `tools/test_live_pipeline.py` (B1, B4-B11, B13) against the API in `design.md`.
-- [ ] 3A.2 Write `tools/test_live_e2e.py` (B1, B4-B7, B9, B10).
-- [ ] 3A.3 Validate: run the new tests on the group 1 commit; each must fail (import error for the new module counts), and record the failure lines.
-- [ ] 3B.1 Implement `live_preview.py` by porting the eval's `M3-1.0-a3` path (no flags) from `~/code/open-source/capswriter-ab/stream_eval/run_eval.py`. (The w15 window was ported first and removed after the real-model e2e run; see design D5.)
-- [ ] 3B.2 Implement D2, D4, D6 and D7 in the pipeline, work handler, `ws_recv` and `ws_send`.
-- [ ] 3C.1 Write `tools/test_live_client.py` (B1-B3, B12) against the API in `design.md`.
-- [ ] 3C.2 Validate: run it on the group 1 commit; each case must fail; record the failure lines.
-- [ ] 3D.1 Add `dictation_mode = 'hold'` to `config_client.py` with a Chinese comment; set `live` in the recorder's three `AudioMessage` calls.
-- [ ] 3D.2 Implement `live_panel.py` (D8) and the `result_processor` branch (D9).
+- [x] 3A.1 Write `tools/test_live_preview.py` and `tools/test_live_pipeline.py` (B1, B4-B11, B13) against the API in `design.md`.
+- [x] 3A.2 Write `tools/test_live_e2e.py` (B1, B4-B7, B9, B10).
+- [x] 3A.3 Validate: run the new tests on the group 1 commit; each must fail (import error for the new module counts), and record the failure lines.
+- [x] 3B.1 Implement `live_preview.py` by porting the eval's `M3-1.0-a3` path (no flags) from `~/code/open-source/capswriter-ab/stream_eval/run_eval.py`. (The w15 window was ported first and removed after the real-model e2e run; see design D5.)
+- [x] 3B.2 Implement D2, D4, D6 and D7 in the pipeline, work handler, `ws_recv` and `ws_send`.
+- [x] 3C.1 Write `tools/test_live_client.py` (B1-B3, B12) against the API in `design.md`.
+- [x] 3C.2 Validate: run it on the group 1 commit; each case must fail; record the failure lines.
+- [x] 3D.1 Add `dictation_mode = 'hold'` to `config_client.py` with a Chinese comment; set `live` in the recorder's three `AudioMessage` calls.
+- [x] 3D.2 Implement `live_panel.py` (D8) and the `result_processor` branch (D9).
 
 ## 4. Merge and validate
 
-- [ ] 4.1 Merge 3A-3D into `feature/live-dictation`.
-- [ ] 4.2 Run all new tests and all existing `tools/test_*.py`. A mismatch between a test and the code goes back to the lane that is wrong by the spec, not to whichever is easier to change.
+- [x] 4.1 Merge 3A-3D into `feature/live-dictation`.
+- [x] 4.2 Run all new tests and all existing `tools/test_*.py`. A mismatch between a test and the code goes back to the lane that is wrong by the spec, not to whichever is easier to change.
 
 ## 5. Review, simplify, mutations, docs (parallel)
 
-- [ ] 5A Opus code review of the diff against `spec.md` and `design.md`: correctness, privacy (no partial text in logs), focus behaviour, hold mode unchanged, and the KISS / Ponytail audit checklist (every line serves a scenario, no one-caller abstraction, no new knob, no impossible-case branch, no touched line outside the task, hold path does no extra work).
-- [ ] 5B Simplify pass over the whole diff (the five checks in the user's rules plus the KISS / Ponytail checklist); report the line reduction.
-- [ ] 5C Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
-- [ ] 5D Update `readme.md` (the setting, what live mode shows, GPU cost, restart needed) and `CLAUDE.md` (the "流式识别策略" decision row and the task list).
+- [x] 5A Opus code review (report: `review-5A.md`: 0 HIGH, 9 MEDIUM, 11 LOW; all applied in group 6) of the diff against `spec.md` and `design.md`: correctness, privacy (no partial text in logs), focus behaviour, hold mode unchanged, and the KISS / Ponytail audit checklist (every line serves a scenario, no one-caller abstraction, no new knob, no impossible-case branch, no touched line outside the task, hold path does no extra work).
+- [x] 5B Simplify pass (report: `simplify-5B.md`: two proposals, -2 lines; the ws_send merge was applied; the hoisted import was superseded by review #2, which imports live_panel only in live mode) over the whole diff (the five checks in the user's rules plus the KISS / Ponytail checklist); report the line reduction.
+- [x] 5C (40 rows; `RESULT mutate caught=40 missed=0 skipped=0 errors=0` at 3380b4e; the first run found 5 MISSED rows, each closed with a new test, never by deleting the row) Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
+- [x] 5D Update `readme.md` (the setting, what live mode shows, GPU cost, restart needed) and `CLAUDE.md` (the "流式识别策略" decision row and the task list).
 
 Call sites to mutate (5C):
 
@@ -134,7 +134,7 @@ Call sites to mutate (5C):
 
 ## 6. Apply findings
 
-- [ ] 6.1 Apply accepted findings from 5A and 5B; rerun only the tests the fixes touch, plus the mutation rows on touched call sites.
+- [x] 6.1 Apply accepted findings from 5A and 5B; rerun only the tests the fixes touch, plus the mutation rows on touched call sites.
 
 ## 7. Verify and clean
 
