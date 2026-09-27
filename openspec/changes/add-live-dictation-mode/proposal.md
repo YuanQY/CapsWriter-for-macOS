@@ -38,8 +38,9 @@ decision row is updated with this change.
   pushes a partial message (committed + tentative text) to that client.
 - On release, the existing final transcription and output path run unchanged.
   The pasted text is the final text, not the preview. The panel then closes.
-- Long utterances: when the live segment grows past 15 s, its start is frozen at
-  a pause so each partial pass stays under the 1 s budget.
+- Each partial pass re-reads the whole recording so far, so committed text
+  never changes. Past about 45 s a pass takes more than 1 s and updates slow
+  down accordingly.
 - Partial passes never change the final pass and delay its start by at most one
   pass that is already running. Partial text is kept in memory only: not
   logged, saved, broadcast or pasted.

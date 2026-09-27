@@ -34,7 +34,7 @@ Rows whose reference has digits (or Chinese numerals in D) are reported apart.
 - M2-1.0: every 1 s re-transcribe all audio so far, LocalAgreement-2, hold back
   the last 4 units, positional compare.
 - M3-1.0: M2 plus numeral hold and content alignment (difflib).
-- M3-1.0-a3: M3 with three agreeing passes. **Chosen, with the w15 window (see below).**
+- M3-1.0-a3: M3 with three agreeing passes. **Chosen** (the w15 window was tried with it and removed; see below).
 - M3-1.0-w15: M3 plus freezing the segment start at a pause past 15 s.
 
 ## Results (main subsets)
@@ -77,11 +77,19 @@ with the 15 s freeze and two simpler freeze rules. C has 4 clips of 30-74 s
 | D | main | a3 / a3-w15 | 6.2 % | 10.9 % | 1.4 % | 0 | 0.22 s |
 | D | numbers | a3 / a3-w15 | 5.8 % | 15.6 % | 0.6 % | 0 | 0.44 / 0.33 s |
 
-- a3-w15 keeps D unchanged and brings C passes under 1 s. **Chosen.**
-- Both alignment variants keep committed text but make it wrong more often. A
-  forced freeze that replaces the committed head is what corrects a wrong
-  commit; the spec allows that one change.
+- a3-w15 keeps D unchanged and brings C passes under 1 s. It was chosen first.
+- Both alignment variants keep committed text but make it wrong more often.
 - Final MER is the same for every row (5.6 % / 10.8 % on C, 3.6 % / 0.5 % on D).
+
+Real-model check of the implementation (2026-09-27, `tools/test_live_e2e.py`
+long case, a 30 s Tingting TTS clip, then an offline trace of `LiveTask` with
+the real engine): pauses were found at every tick from 16 s, but the head
+transcript over 0-12 s read "聊医疗" while every full pass read "聊一聊", so no
+agreed freeze happened. The forced freeze at 26 s replaced correct committed
+text ("一聊") with the wrong head ("医疗"). **Decision: the window was removed;
+the implemented rule is M3-1.0-a3** (every pass reads all audio so far). On D
+the two are identical; the cost is slower passes past about 30-45 s (1.29 s
+p95 on C's 30-74 s clips, against 0.73 s with the window).
 
 ## Known limits
 
