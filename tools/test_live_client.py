@@ -419,9 +419,10 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         Given: 一段远超 _MAX_SCREEN_RATIO 封顶高度的重复长文本（用重复次数保证
                不管测试机屏幕大小，全文本高度都明显超过封顶）
         When: show() 之后
-        Then: 面板高度封顶在 屏幕可视高度 * _MAX_SCREEN_RATIO（留浮点容差）；
-              label 仍按全文本高度贴底摆放（底边在 _MARGIN），故其高度大于面板
-              高度——证明确有内容被裁剪掉，而贴底的最新（暂定）文字留在可见区域
+        Then: 面板高度封顶在 屏幕可视高度 * _MAX_SCREEN_RATIO 附近（留 1pt 容差，
+              覆盖 setFrame_display_ 按屏幕物理像素取整带来的误差）；label 仍按
+              全文本高度贴底摆放（底边在 _MARGIN），故其高度大于面板高度——证明
+              确有内容被裁剪掉，而贴底的最新（暂定）文字留在可见区域
         """
         from AppKit import NSScreen
 
@@ -436,7 +437,7 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         label = self.live_panel._label
 
         self.assertLessEqual(
-            panel.frame().size.height, cap + 2 * margin + 0.5,
+            panel.frame().size.height, cap + 1,
             '面板高度必须封顶，不能随文本一直变高')
         self.assertGreater(
             label.frame().size.height, panel.frame().size.height,
