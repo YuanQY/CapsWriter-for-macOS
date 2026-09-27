@@ -139,6 +139,7 @@ Call sites to mutate (5C):
 - `result_processor`: preview branch `show`; `hide` on final
 - `live_panel`: non-activating style; `setHidesOnDeactivate_(False)`; `orderFrontRegardless`; auto-hide generation check
 - `live_preview`: `AGREE`, `HOLDBACK`, `INTERVAL`, the numeral hold, the content alignment, the trailing-punctuation trim, the whole-audio slice passed to `transcribe`
+- Added in group 9: `_join` (committed and shown text); the pause branch, its trailing-punctuation loop and its `limit and` guard, and the three-pass window of the pause test; the tentative value returned by `LiveTask.step` and passed as `text_tentative` in `live_tick`; the tentative argument at the `result_processor` preview call site; the `live_panel` height cap
 
 ## 6. Apply findings
 
@@ -164,10 +165,11 @@ edits (orchestrator). 9.6 and 9.7 wait on the merge.
 - [X]  9.3 Pause commits the tail (spec: Commit rule; scenarios "A pause commits the tail", "A numeral at a pause still waits"). The user saw the last tentative words never turn committed while pausing. Changed expected values, declared (each test feeds three identical passes, which the pause rule now treats as a pause):
   - `test_live_preview::test_insertion_does_not_duplicate_tail`: setup committed "你好世界" becomes "你好世界今天天气"; final committed "你好世界今天" with tentative "天气很好" becomes "你好世界今天天气很好" with tentative "". The spec scenario's precondition changed to match.
   - `test_live_preview::test_commits_on_third_agreeing_pass`: committed "今天下午三点开会" becomes "今天下午三点开会讨论方案".
-- [X]  9.4 Round-4 findings: Latin spacing and the pause rule tested through the real `WorkHandler.loop` / `live_tick`; mutation rows for `.lstrip()` in `LiveTask.step` and in `live_tick`, for the pause branch, for committing trailing punctuation, and for a 20 pt cap overshoot; the cap test bound tightened from `cap + 2 * margin + 0.5` to `cap + 1`. Declared gap: the real-model e2e has no mixed Chinese-English clip (the only reliable TTS voice reads Mandarin), so Latin spacing on the real engine is left to A7.
+- [X]  9.4 Round-4 findings: Latin spacing and the pause rule tested through the real pipeline (`test_live_pipeline` calls `process()` and `live_tick()` directly; the `WorkHandler.loop` → `live_tick` forward is pinned by the existing work-handler tests); mutation rows for `.lstrip()` in `LiveTask.step` and in `live_tick`, for the pause branch, for committing trailing punctuation, and for a 20 pt cap overshoot; the cap test bound tightened from `cap + 2 * margin + 0.5` to `cap + 1`. Declared gap: the real-model e2e has no mixed Chinese-English clip (the only reliable TTS voice reads Mandarin), so Latin spacing on the real engine is left to A7.
 - [X]  9.5 Compare the current and the pause rule on the same passes of public layers A, B and C (commit error, rewrites, commit lag); result in `evidence.md`, "Pause rule".
 - [X]  9.6 Simplify pass over the group 9 code diff (run by the lane in a fresh subagent: -16 changed lines; the `limit and` guard kept because an all-punctuation tail would index out of range).
-- [ ]  9.7 Opus delta acceptance over 67efc8b..HEAD (round 5). Not waited for: on 2026-09-27 the user confirmed the group 9 behaviour in the app, marked the open rows of `acceptance.md` PASS, and chose to archive before round 5 returned; its report is for reference only.
+- [ ]  9.7 Opus delta acceptance over 67efc8b..HEAD (round 5). Not waited for: on 2026-09-27 the user confirmed the group 9 behaviour in the app, marked the open rows of `acceptance.md` PASS, and chose to archive before round 5 returned; its report is for reference only. Round 5 returned `Verdict: NEEDS-HUMAN` with no FAIL (report in `acceptance-rounds-4-5.md`).
+- [ ]  9.8 Round-5 non-blocking findings, after the archive at the user's request (tests and docs only, no production change): pin the `limit and` guard (H8), pause detection on three passes by an assertion (H2), and the space before tentative text at the client call site (H4), each with a `mutations.toml` row; fix the 9.4 wording and the 5C call-site list.
 
 ## Acceptance
 

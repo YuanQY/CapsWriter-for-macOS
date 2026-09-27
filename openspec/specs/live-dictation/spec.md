@@ -1,7 +1,10 @@
 # live-dictation Specification
 
 ## Purpose
-TBD - created by archiving change add-live-dictation-mode. Update Purpose after archive.
+Optional live dictation for CapsWriter on macOS: while the user holds the
+shortcut, a floating panel that never takes focus shows the text recognized so
+far, split into committed and tentative parts. The text that is output on
+release is the same final transcription as in the default hold mode.
 
 ## Requirements
 
