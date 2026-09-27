@@ -274,3 +274,8 @@ file = "core/client/output/live_panel.py"
 old  = '''NSForegroundColorAttributeName: NSColor.secondaryLabelColor()}))'''
 new  = '''NSForegroundColorAttributeName: NSColor.labelColor()}))'''
 
+[[mutation]]
+name = "work handler ticks a pipeline without live_tick"
+file = "core/server/worker/work_handler.py"
+old  = ''' and hasattr(self.pipeline, 'live_tick'):'''
+new  = ''':'''

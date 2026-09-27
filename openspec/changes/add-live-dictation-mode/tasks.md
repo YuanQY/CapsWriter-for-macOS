@@ -24,7 +24,7 @@ Run tests as `.venv/bin/python tools/<name>.py -v`.
 | 5D Docs | 5A, 5B, 5C | 4 | Sonnet | `readme.md`, `CLAUDE.md` |
 | 6 Apply findings | - | 5A-5D | lane authors | the files each finding names |
 | 7 Verify and clean | - | 6 | orchestrator | none |
-| 8 Acceptance review | - | 7 | Fable, fresh context | `acceptance-*.md` |
+| 8 Acceptance review | - | 7 | Fable, fresh context | `acceptance.md` |
 
 - Only `tools/test_live_e2e.py` loads the model (GPU). It runs in group 4 and 7,
   never in parallel with itself.
@@ -61,8 +61,9 @@ test runs from the real entry point without replacing a real dependency.
 | B9 | Each pass reads all audio so far; committed text only grows over a long recording | `test_live_preview::` step test (transcriber gets all fed samples; committed only grows) | `test_live_e2e::test_long_live_run_keeps_up` (30 s TTS clip; previews keep coming, each committed text extends the previous one, final matches hold) |
 | B10 | Partial text is not logged or printed, on server and client | `test_live_pipeline::test_preview_is_not_logged`, `test_live_client::test_preview_is_not_logged` (real `ResultProcessor`, `client` logger captured at DEBUG) | `test_live_e2e::test_live_run_streams_previews` (captures the `server` logger at DEBUG and stdout; none before the final contains preview text) |
 | B11 | A failing pass skips the update and uses up its slot; final still works; error logged without text | `test_live_pipeline::test_failing_pass_does_not_break_final` | Declared gap: a model failure needs an injected fault. |
-| B12 | Client shows preview in a non-activating panel (committed normal, tentative grey), hides on final, auto-hides after 5 s | `test_live_client::test_panel_is_non_activating`, `::test_panel_colours`, `::test_final_hides_panel`, `::test_panel_auto_hides` | `test_live_client::test_preview_message_updates_real_panel` (real JSON from the server's `RecognitionMessage.to_json`, real `from_dict`, real `ResultProcessor._handle_message`, real `live_panel` NSPanel, main run loop pumped) |
-| B13 | Disconnect drops the live task | `test_live_pipeline::test_cleanup_drops_live_task` | Declared gap: needs a socket drop mid-recording; covered by the real `WorkHandler.cleanup` path with a controlled socket list. |
+| B12 | Client shows preview in a non-activating panel (committed normal, tentative grey), hides on final, auto-hides after 5 s | `test_live_client::test_show_does_not_activate_app`, `::test_final_hides_panel`, `::test_panel_auto_hides`, `::test_stale_auto_hide_does_not_hide_newer_panel`, `::test_long_mixed_text_label_is_not_clipped`, `::test_utf16_color_ranges_across_surrogate_pair` | `test_live_client::test_preview_message_updates_real_panel` (real JSON from the server's `RecognitionMessage.to_json`, real `from_dict`, real `ResultProcessor._handle_message`, real `live_panel` NSPanel, main run loop pumped) |
+| B13 | Disconnect drops the live task | `test_live_pipeline::test_cleanup_drops_live_task` | `test_live_pipeline::test_cleanup_via_work_handler_drops_live_task` (real `WorkHandler.cleanup()` with a controlled socket list; the socket drop itself is simulated by removing the socket id) |
+| B14 | Another engine: a pipeline without `live_tick` gets no pass and no error | `test_live_pipeline::test_other_engine_pipeline_sends_no_partials` | same test (real `WorkHandler.loop`; the other engine's pipeline is a stand-in with only `process()`) |
 
 Test notes:
 
@@ -114,7 +115,7 @@ Test notes:
 - [x] 5A Opus code review (report: `review-5A.md`: 0 HIGH, 9 MEDIUM, 11 LOW; all applied in group 6) of the diff against `spec.md` and `design.md`: correctness, privacy (no partial text in logs), focus behaviour, hold mode unchanged, and the KISS / Ponytail audit checklist (every line serves a scenario, no one-caller abstraction, no new knob, no impossible-case branch, no touched line outside the task, hold path does no extra work).
 - [x] 5B Simplify pass (report: `simplify-5B.md`: two proposals, -2 lines; the ws_send merge was applied; the hoisted import was superseded by review #2, which imports live_panel only in live mode) over the whole diff (the five checks in the user's rules plus the KISS / Ponytail checklist); report the line reduction.
 - [x] 5C (40 rows; `RESULT mutate caught=40 missed=0 skipped=0 errors=0` at 3380b4e; the first run found 5 MISSED rows, each closed with a new test, never by deleting the row) Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
-- [x] 5D Update `readme.md` (the setting, what live mode shows, GPU cost, restart needed) and `CLAUDE.md` (the "流式识别策略" decision row and the task list).
+- [x] 5D Update `readme.md` (the setting, what live mode shows, GPU cost, restart needed) and `CLAUDE.md` (the "流式识别策略" decision row and a dated status section; the 任务看板 table is not used for this change).
 
 Call sites to mutate (5C):
 
