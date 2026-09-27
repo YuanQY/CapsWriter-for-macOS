@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
 import sys
 import time
 import types
@@ -385,6 +386,35 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(committed_color, NSColor.labelColor())
         self.assertEqual(tentative_color, NSColor.secondaryLabelColor())
 
+    async def test_show_does_not_activate_app(self):
+        """B12（补充 spec 场景 "Focus stays in the target app"）
+        Given: 显示前记录当前最前台应用
+        When: 真实预览消息经 _handle_message 触发 live_panel.show，主线程 RunLoop 被推进
+        Then: 最前台应用不变、也不是本测试进程；本 App 不会被
+              NSApp.activateIgnoringOtherApps_ 激活，不抢走目标 App 的键盘焦点
+        """
+        from AppKit import NSApp, NSWorkspace
+
+        frontmost_before = NSWorkspace.sharedWorkspace().frontmostApplication()
+        pid_before = frontmost_before.processIdentifier() if frontmost_before else None
+
+        raw = RecognitionMessage(
+            task_id='preview-focus', is_final=False, duration=1.0, time_start=0.0,
+            time_submit=0.5, time_complete=0.6, text='聚焦',
+            preview=True, text_tentative='测试',
+        ).to_json()
+        message = RecognitionMessage.from_dict(json.loads(raw))
+
+        processor, _app = _new_result_processor(asyncio.get_running_loop())
+        await processor._handle_message(message)
+        _pump_main_runloop(0.2)
+
+        frontmost_after = NSWorkspace.sharedWorkspace().frontmostApplication()
+        pid_after = frontmost_after.processIdentifier() if frontmost_after else None
+        self.assertEqual(pid_after, pid_before, '显示面板不得改变最前台应用')
+        self.assertNotEqual(pid_after, os.getpid(), '最前台应用不能变成本测试进程')
+        self.assertFalse(NSApp.isActive(), '显示面板不得激活本 App')
+
     async def test_final_hides_panel(self):
         """B12
         Given: 面板已因预览消息显示
@@ -428,6 +458,25 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
             self.assertTrue(self.live_panel._panel.isVisible(), '前置条件：show 后、AUTO_HIDE 前应可见')
             _pump_main_runloop(0.6)  # 累计已超过 AUTO_HIDE(0.5s)
             self.assertFalse(self.live_panel._panel.isVisible(), '超过 AUTO_HIDE 后必须自动隐藏')
+
+    async def test_stale_auto_hide_does_not_hide_newer_panel(self):
+        """B12（补充：过期的 auto-hide 不得关掉更晚显示的面板）
+        Given: AUTO_HIDE 调小；先 show 一次，在它的计时器到期前再 show 一次
+        When: 时间推进到"第一次的计时器已到期、第二次的还没到期"这个窗口
+        Then: 面板仍可见（generation 计数器让过期计时器识别出自己已被取代）；
+              再推进过第二次的到期时间后面板才隐藏
+        """
+        with patch.object(self.live_panel, 'AUTO_HIDE', 0.5):
+            self.live_panel.show('第一次', '')
+            _pump_main_runloop(0.3)
+            self.live_panel.show('第二次', '')
+            # 累计 0.6s：已过第一次的到期时间(0.5s)，还没到第二次的(0.3+0.5=0.8s)
+            _pump_main_runloop(0.3)
+            self.assertTrue(self.live_panel._panel.isVisible(),
+                             '过期的第一次 auto-hide 不得关掉第二次显示的面板')
+            _pump_main_runloop(0.4)  # 累计 1.0s：已过第二次的到期时间
+            self.assertFalse(self.live_panel._panel.isVisible(),
+                              '第二次自己的 auto-hide 到期后必须隐藏')
 
 
 if __name__ == '__main__':
