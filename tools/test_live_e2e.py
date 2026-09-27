@@ -309,10 +309,10 @@ class LiveE2ETests(unittest.TestCase):
         previews = [m for m in messages if m.preview]
         finals = [m for m in messages if m.is_final]
         duration_s = len(audio) / SR
-        # Then: 长录音里预览不应该早早停止更新（不再按"每秒约一次"估算下限：
-        # 每次pass都要重新转写目前为止的全部音频，耗时随录音变长而增长，单次pass
-        # 观测到能到1秒多，所以这里只要求确实发生了不止一次更新，不设更高的比例）
-        self.assertGreaterEqual(len(previews), 3, '长录音里预览不应该早早停止更新')
+        # Then: 预览数量至少达到"每2秒一次"的下限，且最后一条预览覆盖到录音末尾
+        # 附近（不是更新到一半就停了）。
+        self.assertGreaterEqual(len(previews), int(duration_s / 2))
+        self.assertGreaterEqual(previews[-1].duration, duration_s - 3.0)
         self.assertEqual(len(finals), 1)
         self.assertTrue(finals[0].text.strip())
         # Then: 已提交文本全程只增不改（没有冻结窗口，也就没有强制替换的例外）
