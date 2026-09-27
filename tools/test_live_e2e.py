@@ -138,19 +138,26 @@ class ServerHarness:
         return f'ws://127.0.0.1:{self.port}'
 
 
-async def _record(uri, samples, task_id, live, timeout, context='', language='auto'):
-    """像客户端一样，把samples按20ms真实节奏发送，同时收集服务端返回的每条消息。"""
+async def _record(uri, samples, task_id, live, timeout, context='', language='auto', linger=0.0):
+    """像客户端一样，把samples按20ms真实节奏发送，同时收集服务端返回的每条消息和它的
+    到达时刻。final到达后默认立刻收工；linger>0时改为再继续读最多linger秒，用来确认
+    final之后确实不会再收到这个任务的消息。返回 (messages, receive_times, sent_at)，
+    sent_at 是发完最后一个音频包的墙钟时刻。"""
     messages = []
-    time_start = time.time()
+    receive_times = []
+    sent_at = None
 
     async with websockets.connect(uri, max_size=None) as ws:
         async def sender():
+            nonlocal sent_at
+            time_start = time.time()
             n = len(samples)
             if n == 0:
                 await ws.send(AudioMessage(
                     task_id=task_id, source='mic', data='', is_final=True,
                     time_start=time_start, context=context, language=language, live=live,
                 ).to_json())
+                sent_at = time.time()
                 return
             for i in range(0, n, PACKET_FRAMES):
                 chunk = samples[i:i + PACKET_FRAMES]
@@ -164,17 +171,28 @@ async def _record(uri, samples, task_id, live, timeout, context='', language='au
                 await ws.send(msg.to_json())
                 if not is_final:
                     await asyncio.sleep(PACKET_FRAMES / SR)
+            sent_at = time.time()
 
         async def receiver():
             while True:
                 raw = await ws.recv()
-                msg = RecognitionMessage.from_dict(json.loads(raw))
-                messages.append(msg)
-                if msg.is_final:
-                    return
+                messages.append(RecognitionMessage.from_dict(json.loads(raw)))
+                receive_times.append(time.time())
+                if messages[-1].is_final:
+                    break
+            # final之后按需要多等一会儿，确认这个任务真的不会再送来任何消息；
+            # 服务端在final之后关闭连接也算"没有更多消息"，不当错误处理。
+            deadline = time.time() + linger
+            while linger > 0 and time.time() < deadline:
+                try:
+                    raw = await asyncio.wait_for(ws.recv(), timeout=deadline - time.time())
+                except (asyncio.TimeoutError, websockets.ConnectionClosed):
+                    break
+                messages.append(RecognitionMessage.from_dict(json.loads(raw)))
+                receive_times.append(time.time())
 
-        await asyncio.wait_for(asyncio.gather(sender(), receiver()), timeout=timeout)
-    return messages
+        await asyncio.wait_for(asyncio.gather(sender(), receiver()), timeout=timeout + linger)
+    return messages, receive_times, sent_at
 
 
 @unittest.skipUnless(_MODEL_READY, f'本地 qwen_asr_mlx 8bit 模型目录不存在: {_MODEL_DIR}')
@@ -209,8 +227,8 @@ class LiveE2ETests(unittest.TestCase):
         audio = self.synth('我刚用Cloud Code把这个脚本重构了一下，效果很不错', 'hold_basic')
         task_id = self.next_task_id('hold')
         # When: 通过真实的 ws_recv/WorkHandler/引擎完整跑一遍录音
-        messages = asyncio.run(_record(self.harness.uri, audio, task_id, live=False,
-                                        timeout=len(audio) / SR + 20))
+        messages, _, _ = asyncio.run(_record(self.harness.uri, audio, task_id, live=False,
+                                              timeout=len(audio) / SR + 20))
         # Then: 全程没有任何预览消息，只有一条 final，且识别出了非空文本
         previews = [m for m in messages if m.preview]
         finals = [m for m in messages if m.is_final]
@@ -227,8 +245,8 @@ class LiveE2ETests(unittest.TestCase):
         stdout_buf = io.StringIO()
         with self.assertLogs('server', level='DEBUG') as log_cm, \
                 contextlib.redirect_stdout(stdout_buf):
-            messages = asyncio.run(_record(self.harness.uri, audio, task_id, live=True,
-                                            timeout=len(audio) / SR + 20))
+            messages, _, _ = asyncio.run(_record(self.harness.uri, audio, task_id, live=True,
+                                                  timeout=len(audio) / SR + 20))
 
         previews = [m for m in messages if m.preview]
         finals = [m for m in messages if m.is_final]
@@ -277,19 +295,24 @@ class LiveE2ETests(unittest.TestCase):
     def test_live_final_matches_hold(self):
         # Given: 同一段真实语音
         audio = self.synth('今天下午三点开会讨论方案，大家提前准备一下材料', 'match_hold')
-        # When: 分别以 hold 与 live 模式各跑一遍
+        # When: 分别以 hold 与 live 模式各跑一遍；live 一侧在收到 final 后再多等
+        # 1.5s，确认这个任务真的不会再送来任何消息
         hold_id = self.next_task_id('match-hold')
         live_id = self.next_task_id('match-live')
-        hold_messages = asyncio.run(_record(self.harness.uri, audio, hold_id, live=False,
-                                             timeout=len(audio) / SR + 20))
-        live_messages = asyncio.run(_record(self.harness.uri, audio, live_id, live=True,
-                                             timeout=len(audio) / SR + 20))
+        hold_messages, _, _ = asyncio.run(_record(self.harness.uri, audio, hold_id, live=False,
+                                                    timeout=len(audio) / SR + 20))
+        live_messages, _, _ = asyncio.run(_record(self.harness.uri, audio, live_id, live=True,
+                                                    timeout=len(audio) / SR + 20, linger=1.5))
         hold_final = next(m for m in hold_messages if m.is_final)
         live_final = next(m for m in live_messages if m.is_final)
         # Then: live 模式最终吐出的文本与 hold 模式完全一致（同一条最终识别路径）
         self.assertEqual(live_final.text, hold_final.text)
         # Then: live 模式的 final 之前没有任何消息带着 final 之后才该有的属性冲突
         self.assertFalse(live_final.preview)
+        # Then: final之后1.5s内不会再收到该任务的任何预览消息
+        after_final = live_messages[live_messages.index(live_final) + 1:]
+        self.assertFalse(any(m.preview for m in after_final),
+                         'final之后不应该再收到该任务的预览消息')
 
     def test_long_live_run_keeps_up(self):
         # Given: 一段约30秒的真实语音（每次pass都要重新转写目前为止的全部音频，
@@ -304,15 +327,17 @@ class LiveE2ETests(unittest.TestCase):
         self.assertGreaterEqual(len(audio) / SR, 20.0, '这条语料应当合成出至少20秒的语音')
         task_id = self.next_task_id('long')
         # When: 完整跑一遍这段较长的实时录音
-        messages = asyncio.run(_record(self.harness.uri, audio, task_id, live=True,
-                                        timeout=len(audio) / SR + 30))
-        previews = [m for m in messages if m.preview]
+        messages, receive_times, sent_at = asyncio.run(
+            _record(self.harness.uri, audio, task_id, live=True, timeout=len(audio) / SR + 30))
+        preview_idx = [i for i, m in enumerate(messages) if m.preview]
+        previews = [messages[i] for i in preview_idx]
         finals = [m for m in messages if m.is_final]
         duration_s = len(audio) / SR
-        # Then: 预览数量至少达到"每2秒一次"的下限，且最后一条预览覆盖到录音末尾
-        # 附近（不是更新到一半就停了）。
+        # Then: 预览数量至少达到"每2秒一次"的下限，且最后一条预览是在音频发送完
+        # 之前不太久收到的（墙钟时间；不是更新到一半就停了）。
         self.assertGreaterEqual(len(previews), int(duration_s / 2))
-        self.assertGreaterEqual(previews[-1].duration, duration_s - 3.0)
+        self.assertLessEqual(sent_at - receive_times[preview_idx[-1]], 3.0,
+                             '最后一次预览不应该比音频发送完早太多')
         self.assertEqual(len(finals), 1)
         self.assertTrue(finals[0].text.strip())
         # Then: 已提交文本全程只增不改（没有冻结窗口，也就没有强制替换的例外）

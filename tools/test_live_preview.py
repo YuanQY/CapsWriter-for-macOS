@@ -49,8 +49,9 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual(agreement.committed, '', '三次不一致的尾部不应提交任何内容')
         # When: 第四次转写与前三次的公共前缀一致，且不在保留尾部（holdback=4）之内
         shown = agreement.update('我刚用Cloud Code把这个脚本重构了一下')
-        # Then: 已提交文本是"我刚用Cloud"（Cloud 后的空格是该单元自带的分隔符）
-        self.assertEqual(agreement.committed.rstrip(), '我刚用Cloud')
+        # Then: 已提交文本是"我刚用Cloud "（Cloud 后的空格是该单元自带的分隔符，
+        # spec.md 里这个场景的原文就带着这个空格）
+        self.assertEqual(agreement.committed, '我刚用Cloud ')
         self.assertEqual(shown, '我刚用Cloud Code把这个脚本重构了一下')
 
     def test_open_numeral_run_waits(self):
@@ -70,10 +71,12 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual(agreement.committed, '价格是一万五千块')
 
     def test_insertion_does_not_duplicate_tail(self):
-        # Given: "你好世界"已经提交（模拟此前若干次通过验证的转写）
+        # Given: "你好世界"已经提交（用三次一致的公开update()调用达到这个状态，
+        # 而不是直接写内部字段）
         agreement = live_preview.Agreement()
-        agreement.committed = '你好世界'
-        agreement.keys = [live_preview.ukey(u) for u in live_preview.units('你好世界')]
+        for _ in range(3):
+            agreement.update('你好世界今天天气')
+        self.assertEqual(agreement.committed, '你好世界')
         # When: 接下来三次转写都在"世界"前插入了"啊"，并在"世界"后新增了"今天天气很好"
         text = '你好啊世界今天天气很好'
         for _ in range(2):
@@ -81,7 +84,6 @@ class AgreementTests(unittest.TestCase):
         shown = agreement.update(text)
         # Then: 按内容对齐找到"世界"后的尾部，提交"你好世界今天"而不是位置对齐导致的重复"界"
         self.assertEqual(agreement.committed, '你好世界今天')
-        self.assertNotEqual(agreement.committed, '你好世界界今天')
         self.assertEqual(shown[len(agreement.committed):], '天气很好')
 
     def test_trailing_punctuation_hidden(self):
@@ -90,7 +92,6 @@ class AgreementTests(unittest.TestCase):
         shown = agreement.update('你好，世界。')
         # Then: 暂定文本隐藏了本次转写自己的结尾标点，句中的逗号则保留
         self.assertEqual(shown, '你好，世界')
-        self.assertFalse(shown.endswith('。'))
 
     def test_commits_on_third_agreeing_pass(self):
         # Given: 同一段文本连续转写两次

@@ -5,7 +5,7 @@
 B10（预览文本绝不可进入任何日志）、B12（客户端预览面板：非激活样式、
 提交/暂定文本配色、final 隐藏、AUTO_HIDE 自动隐藏）。
 
-安全边界（对齐 lane-rules.md）：
+安全边界：
 - 录音器测试只连接本文件自建的本地抓包 WebSocket 服务端（127.0.0.1:0），
   绝不连接生产端口 6016，也绝不启动真实客户端或注册全局快捷键。
 - 最终结果分支（B12 的 final 消息）把 ResultProcessor 的输出/粘贴出口整体
@@ -33,17 +33,6 @@ import websockets
 # 保证从任意 cwd 执行时都导入本项目，而不是环境中同名包。
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-# 本回归不触发真实剪贴板/音频设备；测试环境未安装可选依赖时，先提供最小 API
-# 让 result_processor/recorder 的导入链能跑通，避免无关依赖遮蔽 live 模式语义断言。
-if 'pyclip' not in sys.modules:
-    _pyclip_stub = types.ModuleType('pyclip')
-    _pyclip_stub.copy = lambda content: None
-    _pyclip_stub.paste = lambda: ''
-    sys.modules['pyclip'] = _pyclip_stub
-
-if 'sounddevice' not in sys.modules:
-    sys.modules['sounddevice'] = types.ModuleType('sounddevice')
-
 from config_client import ClientConfig as Config
 from core.client.audio.recorder import AudioRecorder
 from core.client.connection import WebSocketManager
@@ -57,8 +46,8 @@ def _year_folder_snapshot() -> set:
     """录音年份目录（如 2026/）下现有文件的快照。
 
     AudioFileManager 用 `Path() / 年 / 月 / 'assets'`（相对 cwd）落盘；测试须以
-    仓库根目录启动（lane-contract 约定），故这里直接用 REPO_ROOT 定位同一目录，
-    用于证明 save_audio=False 时该目录不会多出任何文件（不碰用户真实录音归档）。
+    仓库根目录启动，故这里直接用 REPO_ROOT 定位同一目录，用于证明
+    save_audio=False 时该目录不会多出任何文件（不碰用户真实录音归档）。
     """
     year_dir = REPO_ROOT / time.strftime('%Y')
     if not year_dir.exists():
@@ -386,6 +375,65 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(committed_color, NSColor.labelColor())
         self.assertEqual(tentative_color, NSColor.secondaryLabelColor())
 
+    async def test_long_mixed_text_label_is_not_clipped(self):
+        """B12（补充 review #1）：中英混排长文本不能被裁掉最后一行
+        Given: 先 show 一段单行文本，记录此时面板高度作为"单行"基线
+        When: 再 show 一段很长的中英混排文本（需要换成多行）
+        Then: label 实际高度必须能容纳 NSTextField 自己按同样宽度算出的换行高度
+              （不能比它矮，否则最后一行——最新的暂定文字——会被裁掉）；
+              面板高度也必须明显高于单行基线，证明确实按多行布局
+        """
+        from Foundation import NSPoint, NSRect, NSSize
+
+        self.live_panel.show('单行', '')
+        _pump_main_runloop(0.2)
+        one_line_panel_height = self.live_panel._panel.frame().size.height
+
+        # 整句反复重复时两种量法一直吻合；在词中间截断（这里正好切在 "Python" 中间）
+        # 才会撞上 boundingRect 与 NSTextField 实际换行的分歧，这一长度是本地探测得到的。
+        long_text = ('我刚用 Claude Code 把这个 Python 脚本重构了一下，' * 20)[:129]
+        self.live_panel.show(long_text, '')
+        _pump_main_runloop(0.2)
+
+        label = self.live_panel._label
+        width = label.frame().size.width
+        needed_height = label.cell().cellSizeForBounds_(
+            NSRect(NSPoint(0, 0), NSSize(width, 1.0e7))).height
+        self.assertGreaterEqual(
+            label.frame().size.height, needed_height - 0.5,
+            'label 必须装得下换行后的整段文本，不能比 NSTextField 自己量出的高度矮')
+        self.assertGreater(
+            self.live_panel._panel.frame().size.height, one_line_panel_height,
+            '长文本应让面板变高（多行布局），而不是停在单行高度')
+
+    async def test_utf16_color_ranges_across_surrogate_pair(self):
+        """B12（补充 review #10）：委托/暂定分色不能按 Python 字符数算下标
+        Given: committed='好😀'（😀 在 Python 里 len 是 1，但在 NSString/UTF-16 里
+               是代理对，占 2 个 code unit），tentative='尾巴'
+        When: show() 之后按 UTF-16 下标读取 attributedStringValue 的颜色属性
+        Then: 首字符"好"是 labelColor；暂定部分的首字符"尾"与末字符"巴"都是
+              secondaryLabelColor（若按 Python 长度切 NSRange，代理对会把分界点
+              切到 😀 中间，导致这三处至少一处colour 算错或缺失）
+        """
+        from AppKit import NSColor, NSForegroundColorAttributeName
+
+        committed, tentative = '好😀', '尾巴'
+        self.live_panel.show(committed, tentative)
+        _pump_main_runloop(0.2)
+
+        attributed = self.live_panel._label.attributedStringValue()
+        ns_length = attributed.length()
+        self.assertEqual(ns_length, 5, 'NSString 长度按 UTF-16 code unit 计：好(1)+😀(2)+尾(1)+巴(1)')
+
+        def color_at(index):
+            attrs, _ = attributed.attributesAtIndex_effectiveRange_(index, None)
+            return attrs.get(NSForegroundColorAttributeName)
+
+        self.assertEqual(color_at(0), NSColor.labelColor(), '"好"应是已提交色')
+        tentative_start = ns_length - len(tentative)  # "尾" 的真实 UTF-16 起始下标
+        self.assertEqual(color_at(tentative_start), NSColor.secondaryLabelColor(), '"尾"应是暂定色')
+        self.assertEqual(color_at(ns_length - 1), NSColor.secondaryLabelColor(), '"巴"应是暂定色')
+
     async def test_show_does_not_activate_app(self):
         """B12（补充 spec 场景 "Focus stays in the target app"）
         Given: 显示前记录当前最前台应用
@@ -417,7 +465,7 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_final_hides_panel(self):
         """B12
-        Given: 面板已因预览消息显示
+        Given: 面板已因预览消息显示，且当前处于 live 听写模式
         When: 收到该任务的 final 消息（输出侧整体打桩，不真实粘贴/打字）
         Then: _handle_message 在真正输出前调用 live_panel.hide()，面板不再可见
         """
@@ -439,6 +487,7 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         )
         with patch.multiple(Config, editor_mode=False, llm_enabled=False,
                              save_audio=False, hot=False), \
+                patch.object(Config, 'dictation_mode', 'live', create=True), \
                 patch('core.client.output.result_processor.get_active_window_info',
                       return_value={}):
             await processor._handle_message(final_message)

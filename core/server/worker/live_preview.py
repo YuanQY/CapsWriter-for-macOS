@@ -34,21 +34,17 @@ _UNIT = re.compile(r"(?:[㐀-䶿一-鿿]|[A-Za-z0-9']+|[^\sA-Za-z0-9'㐀-䶿一-
 _NUMERAL = set("零〇一二三四五六七八九十百千万亿两点0123456789")
 
 
-def units(text: str) -> list[str]:
-    """把文本切成显示单元列表。"""
-    return _UNIT.findall(text.strip())
-
-
 def ukey(u: str) -> str:
     """比较用的 key：忽略大小写；所有标点都视为相同，统一记作 "P"。"""
     u = u.strip()
-    return u.casefold() if re.match(r"[\w㐀-鿿]", u) else "P"
+    # \w 在 Python 3 里本就匹配中日韩字符，不需要再并上 㐀-鿿。
+    return u.casefold() if re.match(r"\w", u) else "P"
 
 
 def is_numeral(u: str) -> bool:
     """一个 unit 是否全部由数字/数字相关汉字组成（用于数字串整体持有判断）。"""
     s = u.strip()
-    return bool(s) and all(c in _NUMERAL for c in s)
+    return s and all(c in _NUMERAL for c in s)
 
 
 class Agreement:
@@ -67,24 +63,20 @@ class Agreement:
         self.keys: list[str] = []
         self._history: list[list[str]] = []
 
-    def _tail_start(self, cur_keys: list[str]) -> int:
-        """在新 pass 里定位"已提交部分之后"的起点：位置对得上直接用位置，
-        对不上（前面插入/删除了内容）就用 difflib 按内容对齐最后一段匹配。"""
-        n = len(self.keys)
-        if cur_keys[:n] == self.keys:
-            return n
-        blocks = [b for b in SequenceMatcher(None, self.keys, cur_keys, autojunk=False)
-                  .get_matching_blocks() if b.size]
-        if not blocks:
-            return n
-        last = blocks[-1]
-        return min(len(cur_keys), last.b + last.size + (n - last.a - last.size))
-
     def update(self, text: str) -> str:
         """喂入一次 pass 的完整文本，返回"已提交 + 暂定尾巴"（暂定尾巴不含末尾标点）。"""
-        cur = units(text)
+        cur = _UNIT.findall(text.strip())
         cur_keys = [ukey(u) for u in cur]
-        start = self._tail_start(cur_keys)
+        # 定位"已提交部分之后"的起点：位置对得上直接用位置，对不上（前面插入/
+        # 删除了内容）就用 difflib 按内容对齐最后一段匹配。
+        n = len(self.keys)
+        start = n
+        if cur_keys[:n] != self.keys:
+            blocks = [b for b in SequenceMatcher(None, self.keys, cur_keys, autojunk=False)
+                      .get_matching_blocks() if b.size]
+            if blocks:
+                last = blocks[-1]
+                start = min(len(cur_keys), last.b + last.size + (n - last.a - last.size))
         tail, tail_keys = cur[start:], cur_keys[start:]
         tails = self._history[-(AGREE - 1):] + [tail_keys]
         if len(tails) == AGREE:
@@ -120,11 +112,6 @@ class LiveTask:
         self.agreement = Agreement()
         self.next_due = INTERVAL * SR      # 累计音频达到这个采样数时该跑下一次 pass
 
-    @property
-    def duration(self) -> float:
-        """已收到的音频总时长（秒），供 pipeline 填充 Result.duration。"""
-        return self._total_samples / SR
-
     def feed(self, samples: np.ndarray) -> None:
         """追加一块新到的音频（float32）。"""
         self._chunks.append(samples)
@@ -145,7 +132,7 @@ class LiveTask:
         # 不能让持续报错的 pass 在每个 20ms 音频包上都重跑一次。
         self.next_due = self._total_samples + INTERVAL * SR
 
-        audio = np.concatenate(self._chunks) if len(self._chunks) > 1 else self._chunks[0]
+        audio = np.concatenate(self._chunks)
         shown = self.agreement.update(transcribe(audio))
         committed = self.agreement.committed
         return committed, shown[len(committed):]

@@ -174,10 +174,11 @@ class AudioRecorder:
                         seg_overlap=Config.mic_seg_overlap,
                         context=Config.context,
                         language=Config.language,
+                        # live 模式下标记本条消息，供服务端按需推送预览
                         live=Config.dictation_mode == 'live',
                     )
                     asyncio.create_task(self._send_message(message))
-
+                    
                 elif task['type'] == 'finish':
                     # 如果有缓存的数据未发送，先发送缓存
                     if self._cache:

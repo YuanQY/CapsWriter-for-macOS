@@ -233,8 +233,10 @@ class ResultProcessor:
         trace_context = None
 
         if message.is_final:
-            from core.client.output import live_panel
-            live_panel.hide()  # 最终结果到达，收起预览面板（从未 show() 过也是空操作）
+            if Config.dictation_mode == 'live':
+                # 最终结果到达，收起预览面板；hold 模式不会显示面板，不必调用
+                from core.client.output import live_panel
+                live_panel.hide()
             trace_context = self.state.pop_trace_context_by_task_id(message.task_id)
             logger.info(f"收到最终识别结果: {text}, 时延: {delay:.2f}s")
             if trace_context is not None:

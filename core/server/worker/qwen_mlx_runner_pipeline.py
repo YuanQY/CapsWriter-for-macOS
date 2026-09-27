@@ -58,8 +58,9 @@ class QwenMLXRunnerPipeline:
         )
 
         if work.is_final:
-            # final 之前先失效该 task_id 的实时预览：pop 之后 live_tick 不会再为它
-            # 构造预览结果，不会有预览排在 final 后面发给客户端。
+            # 无条件执行：ws_recv只在非final包上设置live，清理不能依赖这次final
+            # 包是否也带着live标记，否则漏清理的LiveTask会一直占着内存。pop之后
+            # live_tick不会再为它构造预览结果，不会有预览排在final后面发给客户端。
             self.live.pop(work.task_id, None)
         elif work.live:
             # pipeline 自己单独持有一份音频副本供预览 pass 使用，不动 Runner 内部
@@ -115,54 +116,48 @@ class QwenMLXRunnerPipeline:
         return result
 
     def live_tick(self) -> Optional[Result]:
-        """在没有真实工作单元可处理的间隙里，为最早到期的 live 任务跑一次预览 pass。"""
+        """在没有真实工作单元可处理的间隙里，为最早到期的 live 任务跑一次预览 pass；
+        不经过 formatter，不落任何文本日志。"""
         for task_id, task in self.live.items():
-            if task.due():
-                return self._run_live_pass(task_id, task)
-        return None
+            if not task.due():
+                continue
+            work = task.work
 
-    def _run_live_pass(self, task_id: str, task: LiveTask) -> Optional[Result]:
-        """跑一次预览 pass 并组装预览 Result；不经过 formatter，不落任何文本日志。"""
-        work = task.work
+            def transcribe(segment: np.ndarray) -> str:
+                # 每次 pass 用一个一次性 task_id，Runner 在 is_final=True 时立刻吐出
+                # 结果并丢弃这个 task_id 的状态，不会污染真正 task_id 的缓冲。
+                # Runner 已经在 final 分支里 strip 过一次，这里不需要再 strip。
+                return self.recognizer.feed_audio_patch(
+                    task_id=f"{task_id}#live{task.passes}",
+                    audio=segment,
+                    sample_rate=work.samplerate,
+                    is_final=True,
+                    context=work.context,
+                    language=work.language,
+                    source=work.source,
+                ).text
 
-        def transcribe(segment: np.ndarray) -> str:
-            # 每次 pass 用一个一次性 task_id，Runner 在 is_final=True 时立刻吐出
-            # 结果并丢弃这个 task_id 的状态，不会污染真正 task_id 的缓冲。
-            runner_result = self.recognizer.feed_audio_patch(
-                task_id=f"{task_id}#live{task.passes}",
-                audio=segment,
-                sample_rate=16000,
-                is_final=True,
-                context=work.context,
-                language=work.language,
+            try:
+                committed, tentative = task.step(transcribe)
+            except Exception as exc:
+                # 预览失败不能影响录音和 final：只记录异常类型和 task_id，绝不记录文本。
+                logger.error(f"实时预览 pass 失败: task={task_id[:8]}, exc_type={type(exc).__name__}")
+                return None
+
+            if not committed and not tentative:
+                return None
+
+            # 预览 Result 只填消费方会读的字段：客户端只看 text/text_tentative，
+            # ws_send 只在 source=='file' 时才读 duration；is_final 用默认值 False。
+            return Result(
+                task_id=task_id,
+                socket_id=work.socket_id,
                 source=work.source,
+                text=committed,
+                text_tentative=tentative,
+                preview=True,
             )
-            return runner_result.text.strip()
-
-        try:
-            committed, tentative = task.step(transcribe)
-        except Exception as exc:
-            # 预览失败不能影响录音和 final：只记录异常类型和 task_id，绝不记录文本。
-            logger.error(f"实时预览 pass 失败: task={task_id[:8]}, exc_type={type(exc).__name__}")
-            return None
-
-        if not committed and not tentative:
-            return None
-
-        now = time.time()
-        return Result(
-            task_id=task_id,
-            socket_id=work.socket_id,
-            source=work.source,
-            duration=task.duration,
-            time_start=work.time_start,
-            time_submit=now,
-            time_complete=now,
-            text=committed,
-            text_tentative=tentative,
-            is_final=False,
-            preview=True,
-        )
+        return None
 
     def cleanup_tasks(self, stale_task_ids: list[str]) -> None:
         """Worker 清理断连 session 时，同步释放 Runner 内部缓冲和实时预览状态。"""
