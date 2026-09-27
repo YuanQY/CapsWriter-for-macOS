@@ -167,7 +167,7 @@ edits (orchestrator). 9.6 and 9.7 wait on the merge.
 - [X]  9.4 Round-4 findings: Latin spacing and the pause rule tested through the real `WorkHandler.loop` / `live_tick`; mutation rows for `.lstrip()` in `LiveTask.step` and in `live_tick`, for the pause branch, for committing trailing punctuation, and for a 20 pt cap overshoot; the cap test bound tightened from `cap + 2 * margin + 0.5` to `cap + 1`. Declared gap: the real-model e2e has no mixed Chinese-English clip (the only reliable TTS voice reads Mandarin), so Latin spacing on the real engine is left to A7.
 - [X]  9.5 Compare the current and the pause rule on the same passes of public layers A, B and C (commit error, rewrites, commit lag); result in `evidence.md`, "Pause rule".
 - [X]  9.6 Simplify pass over the group 9 code diff (run by the lane in a fresh subagent: -16 changed lines; the `limit and` guard kept because an all-punctuation tail would index out of range).
-- [ ]  9.7 Opus delta acceptance over 67efc8b..HEAD; rounds 4 and 5 go into `acceptance.md` after round 3, unchanged.
+- [ ]  9.7 Opus delta acceptance over 67efc8b..HEAD (round 5). Not waited for: on 2026-09-27 the user confirmed the group 9 behaviour in the app, marked the open rows of `acceptance.md` PASS, and chose to archive before round 5 returned; its report is for reference only.
 
 ## Acceptance
 
