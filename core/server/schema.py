@@ -43,6 +43,8 @@ class Work:
     context: str = ''
     language: str = 'auto'
     samplerate: int = 16000
+    # 来自 AudioMessage.live：该任务是否需要实时预览（仅 qwen_asr_mlx Runner 管线使用）
+    live: bool = False
 
 
 @dataclass
@@ -86,6 +88,11 @@ class Result:
     timestamps: List[float] = field(default_factory=list)
     
     is_final: bool = False
+
+    # 实时预览结果：preview=True 时 text 为已提交文本，text_tentative 为暂定尾巴；
+    # 预览结果不属于任何 RecognitionSession，发送端不得记录其文本。
+    preview: bool = False
+    text_tentative: str = ''
 
 @dataclass
 class RecognitionSession:

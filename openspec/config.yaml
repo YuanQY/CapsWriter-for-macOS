@@ -1,0 +1,34 @@
+schema: spec-driven
+
+# Project context shown to the AI when it creates OpenSpec artifacts.
+context: |
+  CapsWriter for macOS is a local, offline dictation tool: hold Caps Lock, speak,
+  release, and the text is pasted into the focused app. A Python client
+  (AppKit menubar via PyObjC, keyboard tap, microphone) talks to a Python ASR
+  server over a WebSocket on 127.0.0.1; the server runs Qwen3-ASR through MLX
+  from the git submodule mlx-qwen3-asr. Both run as launchd agents.
+  This checkout is a private fork of EdgarZhong/CapsWriter-for-macOS; features
+  are not sent upstream, so keep fork records under openspec/.
+  Repository rules (AGENTS.md) apply: never delete files (move them to
+  .archive/), new or changed code carries detailed Chinese comments, config and
+  run changes are mirrored in readme.md, stage status goes to CLAUDE.md.
+  Tests are unittest scripts under tools/, run as `.venv/bin/python tools/<name>.py -v`.
+  Write all OpenSpec artifacts in English, in short plain sentences.
+  Privacy: the user's recordings and transcripts (2026/, evals/manual_cases/,
+  ~/.capswriter/logs) are never opened, printed or committed.
+
+rules:
+  specs:
+    - Keep spec.md to Purpose and Requirements with Scenarios.
+    - Include an automated TDD quality gate requirement for new capabilities.
+  tasks:
+    - "Follow the TDD loop: baseline, unit test plan, audit, generate tests, validate tests, implement, simplify, verify and clean, then an Acceptance group."
+    - "The unit test plan table has a 'Production entry' column. For every new behaviour it names the one test that runs from the real entry point without replacing a real dependency. A test that injects a fake does not fill this column. An empty cell is a gap to close before implementing."
+    - "Mutation checks cover every new production call site (change an argument, drop the call, point it elsewhere), run with ~/.claude/tools/mutate.py from mutations.toml; hand off only when every row is CAUGHT."
+    - "Checks that need the running app or the user go in a final '## Acceptance' group. The agent never ticks them."
+    - "Group tasks into lanes; each group says what it depends on and which files it owns. Lanes that write the same file or use the GPU model are not parallel."
+
+operations:
+  archive:
+    guidance:
+      - "Never pass --yes. A change with an unticked Acceptance task stays under changes/ as implemented and awaiting acceptance."

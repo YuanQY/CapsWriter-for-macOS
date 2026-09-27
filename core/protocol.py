@@ -35,6 +35,9 @@ class AudioMessage:
     seg_overlap: float = 2.0
     context: str = ''
     language: str = 'auto'
+    # 实时模式标记：True 表示客户端处于 live 模式，服务端需为该任务周期性
+    # 推送预览（partial）消息。默认 False 即 hold 模式，旧客户端不带此字段也按 hold 处理。
+    live: bool = False
 
     def to_json(self) -> str:
         """序列化为 JSON 字符串"""
@@ -53,6 +56,7 @@ class AudioMessage:
             seg_overlap=data.get('seg_overlap', 2.0),
             context=data.get('context', ''),
             language=data.get('language', 'auto'),
+            live=data.get('live', False),
         )
 
 
@@ -88,6 +92,12 @@ class RecognitionMessage:
     text_accu: str = ''
     tokens: List[str] = field(default_factory=list)
     timestamps: List[float] = field(default_factory=list)
+
+    # 实时预览：preview=True 表示这是录音进行中的预览消息（is_final 恒为 False），
+    # 此时 text 为已提交（不会再变）的文本，text_tentative 为暂定尾巴（可能被后续预览改写）。
+    # 预览文本只用于屏显，客户端不得粘贴、记录日志或落盘。
+    preview: bool = False
+    text_tentative: str = ''
     
     def to_json(self) -> str:
         """序列化为 JSON 字符串"""
@@ -111,4 +121,6 @@ class RecognitionMessage:
             text_accu=data.get('text_accu', ''),
             tokens=data.get('tokens', []),
             timestamps=data.get('timestamps', []),
+            preview=data.get('preview', False),
+            text_tentative=data.get('text_tentative', ''),
         )
