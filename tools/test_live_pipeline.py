@@ -62,14 +62,16 @@ class ScriptedRecognizer:
 
     def feed_audio_patch(self, *, task_id, audio, sample_rate, is_final, context, language, source):
         self.calls.append(SimpleNamespace(task_id=task_id, samples=len(audio), is_final=is_final))
+        # 真实 Runner 对任何 task_id（包括预览pass用的 #live 后缀）都是这样：
+        # is_final=False 只缓冲、返回 None；只有 is_final=True 才真正给出结果。
+        if not is_final:
+            return None
         if '#live' in task_id:
             resp = self._live_responses.popleft()
             if isinstance(resp, BaseException):
                 raise resp
             return SimpleNamespace(text=resp)
-        if is_final:
-            return self._final_responses[task_id]
-        return None
+        return self._final_responses[task_id]
 
     def cancel_task(self, task_id):
         self.cancelled.append(task_id)
@@ -187,17 +189,45 @@ class PipelineLiveTests(unittest.TestCase):
         recognizer.set_final_response('t1', RunnerResult(text='你好世界', duration=1.0))
         pipeline = self.make_pipeline(recognizer)
         pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
+
+        def live_call_count():
+            return len([c for c in recognizer.calls if '#live' in c.task_id])
+
         # When: 该次pass抛出异常
         result = pipeline.live_tick()
         # Then: 预览调用返回None，异常被吞掉，且这一秒的预算已经用掉（不会立刻重试）
         self.assertIsNone(result)
         self.assertEqual(pipeline.live['t1'].passes, 1, '失败的pass也要占用一次预算')
-        self.assertIsNone(pipeline.live_tick(), '同一份音频不应立刻重试')
+        calls_after_failure = live_call_count()
+        # When: 只再喂入不到1秒的新音频就立刻再tick
+        pipeline.process(make_work(live=True, samples=np.zeros(SR // 2, dtype=np.float32)))
+        self.assertIsNone(pipeline.live_tick())
+        # Then: next_due 必须在模型调用之前就已推进；不足1秒新音频不应该再调用一次模型
+        self.assertEqual(live_call_count(), calls_after_failure,
+                         '不足1秒新音频时不应该重试失败的pass')
+        # When: 再喂入音频，凑够1秒新增量后重试
+        recognizer.queue_live_response('你好')
+        pipeline.process(make_work(live=True, samples=np.zeros(SR // 2, dtype=np.float32)))
+        retried = pipeline.live_tick()
+        # Then: 凑够1秒新音频后应该正常再跑一次pass
+        self.assertIsNotNone(retried)
+        self.assertEqual(live_call_count(), calls_after_failure + 1)
         # When: final包随后到达
         final_result = pipeline.process(make_work(live=True, final=True))
         # Then: final依旧正常输出，不受失败的预览pass影响
         self.assertTrue(final_result.is_final)
         self.assertEqual(final_result.text, '你好世界')
+
+    def test_empty_preview_produces_no_result(self):
+        # Given: 预览pass的转写结果是空字符串（既未提交也没有暂定内容）
+        recognizer = ScriptedRecognizer()
+        recognizer.queue_live_response('')
+        pipeline = self.make_pipeline(recognizer)
+        pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
+        # When: 触发一次预览pass
+        result = pipeline.live_tick()
+        # Then: 面板只在首个非空文本时才打开，空文本不产生预览Result
+        self.assertIsNone(result)
 
     def test_cleanup_drops_live_task(self):
         # Given: 一个已经创建了LiveTask的live任务
@@ -262,6 +292,21 @@ class WorkHandlerLiveTests(unittest.TestCase):
         # Then: 预览pass只被真正触发过一次（final到达前后都没有被重复触发）
         live_calls = [c for c in recognizer.calls if '#live' in c.task_id]
         self.assertEqual(len(live_calls), 1)
+
+    def test_empty_preview_reaches_no_queue_out(self):
+        # Given: 只有一个live任务，其预览pass的转写结果是空字符串
+        recognizer = ScriptedRecognizer()
+        recognizer.queue_live_response('')
+        pipeline = QwenMLXRunnerPipeline(recognizer, state=WorkerState())
+        live_work = make_work(live=True, samples=np.zeros(SR, dtype=np.float32))
+        incoming = ScriptedQueue([('value', live_work), ('empty',), ('exit',)])
+        handler = WorkHandler(incoming, queue.Queue(), ['s1'], WorkerState())
+        handler.pipeline = pipeline
+        # When: 运行真实的工作循环
+        handler.loop()
+        # Then: 空文本的预览不会被放上 queue_out
+        with self.assertRaises(queue.Empty):
+            handler.queue_out.get_nowait()
 
 
 if __name__ == '__main__':
