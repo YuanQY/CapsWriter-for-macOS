@@ -148,7 +148,7 @@ Call sites to mutate (5C):
 
 ## 8. Acceptance review
 
-- [ ] 8.1 Fable acceptance in a fresh subagent with paths and commands only (`opsx:accept`).
+- [x] 8.1 (round 1 Fable at 44146fa: FAIL on Q2, fixed; round 3 Opus at d3217e8: `Verdict: NEEDS-HUMAN`, waiting only for the Acceptance items below; see acceptance.md) Fable acceptance in a fresh subagent with paths and commands only (`opsx:accept`).
 
 ## Acceptance
 
