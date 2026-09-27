@@ -155,6 +155,12 @@ old  = '''live_panel.show(message.text, message.text_tentative)'''
 new  = '''pass'''
 
 [[mutation]]
+name = "client call site strips the tentative text before show"
+file = "core/client/output/result_processor.py"
+old  = '''live_panel.show(message.text, message.text_tentative)'''
+new  = '''live_panel.show(message.text, message.text_tentative.lstrip())'''
+
+[[mutation]]
 name = "preview falls through to the non-final path"
 file = "core/client/output/result_processor.py"
 old  = '''live_panel.show(message.text, message.text_tentative)
@@ -287,10 +293,22 @@ old  = '''if all(t == tail_keys for t in tails):'''
 new  = '''if False:'''
 
 [[mutation]]
+name = "pause detected on the last two passes only"
+file = "core/server/worker/live_preview.py"
+old  = '''if all(t == tail_keys for t in tails):'''
+new  = '''if all(t == tail_keys for t in tails[1:]):'''
+
+[[mutation]]
 name = "pause commits trailing punctuation"
 file = "core/server/worker/live_preview.py"
 old  = '''while limit and tail_keys[limit - 1] == 'P':'''
 new  = '''while False:'''
+
+[[mutation]]
+name = "pause hold guard removed"
+file = "core/server/worker/live_preview.py"
+old  = '''while limit and tail_keys[limit - 1] == 'P':'''
+new  = '''while tail_keys[limit - 1] == 'P':'''
 
 [[mutation]]
 name = "step strips the space before tentative text"

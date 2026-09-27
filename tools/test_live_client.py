@@ -383,6 +383,31 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertFalse(committed_underline, '已提交文本不应有下划线')
         self.assertEqual(tentative_underline, 1, '暂定文本必须有单下划线')
 
+    async def test_client_hop_keeps_space_before_tentative_text(self):
+        """B12（补充：客户端转发环节不应丢掉暂定文本开头的分隔空格）
+        Given: 服务端真实构造的预览消息，暂定文本以一个空格开头（"dessert"
+               和"you"之间由 live_preview.py 的 _join 规则补上的分隔空格），
+               经 to_json/from_dict 往返
+        When: 交给真实 ResultProcessor._handle_message，并把主线程 RunLoop 推进
+        Then: 面板显示文本里"dessert"和"you"之间仍有空格，不会被客户端这一跳
+              lstrip 掉而粘连成"dessertyou"
+        """
+        committed, tentative = '我们聊到了dessert', ' you know'
+        raw = RecognitionMessage(
+            task_id='preview-space', is_final=False, duration=1.0, time_start=0.0,
+            time_submit=0.5, time_complete=0.6, text=committed,
+            preview=True, text_tentative=tentative,
+        ).to_json()
+        message = RecognitionMessage.from_dict(json.loads(raw))
+
+        processor, _app = _new_result_processor(asyncio.get_running_loop())
+        await processor._handle_message(message)
+        _pump_main_runloop(0.2)
+
+        label_text = str(self.live_panel._label.attributedStringValue().string())
+        self.assertIn('dessert you know', label_text)
+        self.assertNotIn('dessertyou', label_text)
+
     async def test_long_mixed_text_label_is_not_clipped(self):
         """B12（补充 review #1）：中英混排长文本不能被裁掉最后一行
         Given: 先 show 一段单行文本，记录此时面板高度作为"单行"基线
