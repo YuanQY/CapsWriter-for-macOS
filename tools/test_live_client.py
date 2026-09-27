@@ -463,6 +463,34 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         self.assertNotEqual(pid_after, os.getpid(), '最前台应用不能变成本测试进程')
         self.assertFalse(NSApp.isActive(), '显示面板不得激活本 App')
 
+    async def test_non_preview_partial_does_not_open_panel(self):
+        """B12（补充 spec 场景 "Another engine sends no partials"）
+        Given: 非 qwen_asr_mlx 引擎发来的普通非最终消息（preview=False，仍带文本），
+               面板起始态先显式收起
+        When: 经服务端 RecognitionMessage(...).to_json / 客户端 from_dict 往返后，
+              交给真实 _handle_message，主线程 RunLoop 被推进
+        Then: 客户端必须继续丢弃它——不弹出/不唤醒预览面板，也不产生任何输出
+        """
+        self.live_panel.hide()
+        _pump_main_runloop(0.1)
+
+        raw = RecognitionMessage(
+            task_id='other-engine-partial', is_final=False, duration=1.0, time_start=0.0,
+            time_submit=0.5, time_complete=0.6, text='非 MLX 引擎的中间结果',
+        ).to_json()
+        message = RecognitionMessage.from_dict(json.loads(raw))
+        self.assertFalse(message.preview, '构造的消息就该按其它引擎的样子：非最终但也非 preview')
+
+        with patch.object(Config, 'dictation_mode', 'live', create=True):
+            processor, _app = _new_result_processor(asyncio.get_running_loop())
+            await processor._handle_message(message)
+        _pump_main_runloop(0.2)
+
+        panel = self.live_panel._panel
+        self.assertTrue(panel is None or not panel.isVisible(),
+                         '非 preview 的非最终消息不得弹出/唤醒预览面板')
+        processor._emit_text.assert_not_called()
+
     async def test_final_hides_panel(self):
         """B12
         Given: 面板已因预览消息显示，且当前处于 live 听写模式
