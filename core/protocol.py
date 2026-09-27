@@ -25,6 +25,7 @@ class AudioMessage:
         time_start: 录音/音频开始时间戳
         seg_duration: 分段时长（秒）
         seg_overlap: 重叠时长（秒）
+        live: 是否请求实时预览（live 听写模式）
     """
     task_id: str
     source: Literal['mic', 'file']
@@ -77,6 +78,9 @@ class RecognitionMessage:
         text_accu: 精确输出 - 基于时间戳去重的拼接结果（用于字幕生成）
         tokens: 字级 token 列表（与 timestamps 对应）
         timestamps: 字级时间戳列表（秒）
+
+        preview: 是否为录音进行中的实时预览消息（此时 text 为已提交文本）
+        text_tentative: 预览的暂定尾巴（可能被后续预览改写）
     """
     task_id: str
     is_final: bool

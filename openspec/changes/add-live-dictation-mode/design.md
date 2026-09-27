@@ -58,8 +58,9 @@ streaming, new dependencies).
 
 ### D2. Partial passes run in the worker loop, in the gaps between packets
 
-- `WorkHandler.loop`: when `process()` returns `None` and the buffer is empty,
-  call `self.pipeline.live_tick()` if the pipeline has it. This reuses the
+- `WorkHandler.loop`: when `process()` returns `None` for a live packet and the
+  buffer is empty, call `self.pipeline.live_tick()` if the pipeline has it.
+  Hold packets never tick. This reuses the
   existing optional-hook pattern (`hasattr(self.pipeline, 'cleanup_tasks')`),
   so `WorkPipeline` is not touched.
 - If `live_tick()` returns a `Result`, put it on `queue_out`.
@@ -204,8 +205,8 @@ New file `core/client/output/live_panel.py`, beside `edit_panel.py`.
 - Auto-hide: each `show` bumps a generation counter and schedules
   `AppHelper.callLater(5.0, ...)`, which hides only if the generation did not
   change. This covers a cancelled or failed recording with no final.
-- AppKit import follows `edit_panel` (`try` import, module flag), because
-  `result_processor` is shared with `start_client.py`.
+- No AppKit import guard: this fork runs on macOS only, and under
+  `start_client.py` no main run loop runs, so a guard would not help there.
 
 ### D9. Client dispatch
 
@@ -214,8 +215,8 @@ New file `core/client/output/live_panel.py`, beside `edit_panel.py`.
   return`. It must come before the existing DEBUG line that logs non-final
   text (`result_processor.py:246`). No logging, no diary, no clipboard, no UDP
   on this branch.
-- In the final branch, call `live_panel.hide()` before output. It is a no-op
-  when the panel was never shown.
+- In the final branch, call `live_panel.hide()` before output, only when
+  `dictation_mode == 'live'`, so the hold path does no extra work.
 - No startup warning for an unknown value: it already means hold (D1), and a
   warning in `app.py` could only be tested by starting the whole client, which
   registers global hotkeys. readme.md lists the two values.
