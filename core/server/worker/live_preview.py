@@ -47,6 +47,15 @@ def is_numeral(u: str) -> bool:
     return s and all(c in _NUMERAL for c in s)
 
 
+def _join(a: str, b: str) -> str:
+    """拼接两段文本；如果 a 结尾和 b 开头都是拉丁字母/数字，中间补一个空格，
+    避免前一个 pass 里紧跟标点（没有自带空格）的单词和后一个 pass 里新提交的
+    单词粘连。移植自 capswriter-ab/stream_eval/run_eval.py 的 join()。"""
+    if a and b and re.match(r'[A-Za-z0-9]', a[-1]) and re.match(r'[A-Za-z0-9]', b[0]):
+        return a + ' ' + b
+    return a + b
+
+
 class Agreement:
     """LocalAgreement-3 + holdback + 数字串整体持有 + 内容对齐（M3-a3 变体，无开关）。
 
@@ -89,7 +98,7 @@ class Agreement:
             while m > 0 and is_numeral(tail[m - 1]) and (m >= limit or is_numeral(tail[m])):
                 m -= 1
             if m:
-                self.committed += ''.join(tail[:m])
+                self.committed = _join(self.committed, ''.join(tail[:m]))
                 self.keys += tail_keys[:m]
                 tail, tail_keys = tail[m:], tail_keys[m:]
                 self._history = [t[m:] for t in self._history]
@@ -97,7 +106,7 @@ class Agreement:
         tentative = list(tail)
         while tentative and ukey(tentative[-1]) == 'P':  # 暂定文本不以标点收尾
             tentative.pop()
-        return self.committed + ''.join(tentative)
+        return _join(self.committed, ''.join(tentative))
 
 
 class LiveTask:
