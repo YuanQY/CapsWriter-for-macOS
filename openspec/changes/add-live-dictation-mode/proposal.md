@@ -31,7 +31,7 @@ decision row is updated with this change.
   current behaviour, unchanged) or `'live'`.
 - In live mode the client shows a floating, non-activating preview panel while
   a recording is in progress. Committed text is shown normally, tentative text
-  in grey. Keyboard focus stays in the target app. The preview shows raw model
+  in blue with an underline. Keyboard focus stays in the target app. The preview shows raw model
   text; only the final text gets formatting and hotword substitution.
 - In live mode the server runs a partial transcription of the audio received so
   far about once per second for the recording task, applies the commit rule, and

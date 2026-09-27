@@ -196,7 +196,11 @@ New file `core/client/output/live_panel.py`, beside `edit_panel.py`.
   `canBecomeKeyWindow` (a borderless panel returns False). `edit_panel`'s
   `show_panel` activates the app and is not reused.
 - Content: one wrapping `NSTextField` label with an attributed string:
-  committed text in `labelColor`, tentative text in `secondaryLabelColor`.
+  committed text in `labelColor`, tentative text in `systemBlueColor` with a
+  single underline (the user found grey too close to the normal colour). The
+  panel height is capped at the editor panel's `_MAX_SCREEN_RATIO` (40 % of the
+  visible screen); the label keeps its full height anchored at the bottom, so
+  the oldest lines are clipped at the top and the newest stay visible.
   Same width, corner radius, blur material and top position as the editor
   panel (reuse `_PANEL_W`, `_MARGIN`, `_CORNER_RADIUS`, `panel_origin_y`).
 - API: `show(committed, tentative)` and `hide()`. Both may be called from the

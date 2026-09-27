@@ -31,7 +31,9 @@ first partial message whose text is not empty, and SHALL close when the final
 message arrives or 5 s after the last partial message, whichever comes first.
 The panel SHALL NOT take keyboard focus from the app that had focus when
 recording started. Committed text SHALL be shown in the normal text colour and
-tentative text in a secondary (grey) colour. The preview SHALL show the model's
+tentative text in the system blue colour with an underline. When the text is
+taller than 40 % of the visible screen height, the panel SHALL stop growing and
+show the newest lines. The preview SHALL show the model's
 text before server formatting and client hotword substitution; only the final
 text is formatted and substituted.
 
@@ -68,7 +70,8 @@ numeral unit is one whose characters are all in
 committed unless the next unit of the pass is a non-numeral unit that is also
 outside the last four units of those passes. The uncommitted tail of a new pass SHALL
 be located by content alignment against the committed units. Tentative text
-SHALL NOT end with punctuation.
+SHALL NOT end with punctuation. Where two pieces of shown or committed text meet
+between two ASCII letters or digits, a space SHALL separate them.
 
 #### Scenario: A tail word is not committed early
 - **WHEN** the passes are "我刚用Cloud", "我刚用cloud code把这个" and
@@ -83,6 +86,11 @@ SHALL NOT end with punctuation.
   "价格是一万五千块钱左右吧我觉得"
 - **THEN** "价格是" is committed and "一万五千" is tentative, and after a fourth
   pass "价格是一万五千块钱左右吧我觉得可以" the committed text is "价格是一万五千块"
+
+#### Scenario: Latin words from different passes do not glue together
+- **WHEN** "dessert" was committed before a comma, and later passes read
+  "dessert you know" without the comma
+- **THEN** the shown and committed text read "dessert you", never "dessertyou"
 
 #### Scenario: An insertion inside committed text does not duplicate the tail
 - **WHEN** "你好世界" is committed and the next three passes read
