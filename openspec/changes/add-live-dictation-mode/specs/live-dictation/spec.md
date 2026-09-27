@@ -96,10 +96,10 @@ between two ASCII letters or digits, a space SHALL separate them.
 - **THEN** the shown and committed text read "dessert you", never "dessertyou"
 
 #### Scenario: An insertion inside committed text does not duplicate the tail
-- **WHEN** "你好世界" is committed and the next three passes read
+- **WHEN** "你好世界今天天气" is committed and the next three passes read
   "你好啊世界今天天气很好"
 - **THEN** the committed text becomes "你好世界今天天气很好", not
-  "你好世界界今天天气很好" (the three passes are the same, so the pause rule
+  "你好世界今天天气气很好" (the three passes are the same, so the pause rule
   commits the whole tail)
 
 #### Scenario: A pause commits the tail
