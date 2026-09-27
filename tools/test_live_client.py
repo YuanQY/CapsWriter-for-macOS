@@ -121,6 +121,15 @@ class RecorderLiveModeTests(unittest.IsolatedAsyncioTestCase):
         while not predicate() and loop.time() < deadline:
             await asyncio.sleep(0.01)
 
+    async def _connect_recorder(self) -> AudioRecorder:
+        """建立一个已连上自建抓包服务端的真实 AudioRecorder，供各录音场景复用。"""
+        state = ClientState()
+        app = types.SimpleNamespace(state=state, loop=asyncio.get_running_loop())
+        app.ws = WebSocketManager(app)
+        connected = await app.ws.connect()
+        self.assertTrue(connected, '录音测试必须先连上自建抓包服务端')
+        return AudioRecorder(app)
+
     async def _run_recording(self) -> list:
         """驱动一次真实录音：begin -> 两个跨过阈值的 data 分片 -> finish。
 
@@ -128,28 +137,44 @@ class RecorderLiveModeTests(unittest.IsolatedAsyncioTestCase):
         立即触发一次 AudioMessage 发送（recorder.py 的“data”分支），finish 再
         补发一条 is_final=True 的收尾消息，共 3 条，覆盖“每条音频消息”的断言面。
         """
-        state = ClientState()
-        app = types.SimpleNamespace(state=state, loop=asyncio.get_running_loop())
-        app.ws = WebSocketManager(app)
-        connected = await app.ws.connect()
-        self.assertTrue(connected, '录音测试必须先连上自建抓包服务端')
-
-        recorder = AudioRecorder(app)
+        recorder = await self._connect_recorder()
         block = np.zeros((480, 2), dtype=np.float32)
-        state.queue_in.put_nowait({
+        recorder.state.queue_in.put_nowait({
             'type': 'begin', 'time': 0.0,
             'trace_id': 'trace-live', 'shortcut_key': 'caps_lock',
         })
-        state.queue_in.put_nowait({
+        recorder.state.queue_in.put_nowait({
             'type': 'data', 'time': Config.threshold + 0.1, 'data': block,
         })
-        state.queue_in.put_nowait({
+        recorder.state.queue_in.put_nowait({
             'type': 'data', 'time': Config.threshold + 1.1, 'data': block,
         })
-        state.queue_in.put_nowait({'type': 'finish', 'time': Config.threshold + 1.2})
+        recorder.state.queue_in.put_nowait({'type': 'finish', 'time': Config.threshold + 1.2})
 
         await recorder.record_and_send()
         await self._wait_until(lambda: len(self._server.received) >= 3)
+        return self._server.received
+
+    async def _run_recording_cache_flushed_at_finish(self) -> list:
+        """驱动一次短录音：begin -> 一个未跨阈值的 data 分片（留在 _cache）-> finish。
+
+        recorder.py 的第三处 AudioMessage 构造点在 'finish' 分支里，只有当录音
+        结束时仍未跨过 Config.threshold、_cache 还有未发送数据时才会触发；它和
+        `_run_recording` 里“跨阈值立即发送”的分支互斥，因此单独用一次短录音覆盖。
+        """
+        recorder = await self._connect_recorder()
+        block = np.zeros((480, 2), dtype=np.float32)
+        recorder.state.queue_in.put_nowait({
+            'type': 'begin', 'time': 0.0,
+            'trace_id': 'trace-live-short', 'shortcut_key': 'caps_lock',
+        })
+        recorder.state.queue_in.put_nowait({
+            'type': 'data', 'time': Config.threshold - 0.1, 'data': block,
+        })
+        recorder.state.queue_in.put_nowait({'type': 'finish', 'time': Config.threshold - 0.05})
+
+        await recorder.record_and_send()
+        await self._wait_until(lambda: len(self._server.received) >= 2)
         return self._server.received
 
     async def test_recorder_default_sends_hold(self):
@@ -191,6 +216,20 @@ class RecorderLiveModeTests(unittest.IsolatedAsyncioTestCase):
             messages = await self._run_recording()
 
         self.assertGreaterEqual(len(messages), 1, messages)
+        self.assertTrue(all(msg.get('live') is True for msg in messages), messages)
+        self.assertEqual(_year_folder_snapshot(), self._year_before)
+
+    async def test_recorder_live_mode_tags_cache_flush_message(self):
+        """B3（补充：第三处 AudioMessage 构造点）
+        Given: dictation_mode = 'live'，且录音在跨过起录阈值前就结束（数据全部留在缓存）
+        When: finish 分支把缓存数据一次性发出
+        Then: 该缓存回补消息与收尾消息同样带 live=True
+        """
+        with patch.object(Config, 'save_audio', False), \
+                patch.object(Config, 'dictation_mode', 'live', create=True):
+            messages = await self._run_recording_cache_flushed_at_finish()
+
+        self.assertGreaterEqual(len(messages), 2, messages)
         self.assertTrue(all(msg.get('live') is True for msg in messages), messages)
         self.assertEqual(_year_folder_snapshot(), self._year_before)
 
@@ -313,8 +352,9 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         Then: 真实 live_panel 弹出非激活面板：不可成为 key window、忽略鼠标事件、
               不因失活隐藏；已提交文本用 labelColor，暂定文本用 secondaryLabelColor
         """
-        from AppKit import NSColor, NSWindowStyleMaskNonactivatingPanel
-        from Foundation import NSForegroundColorAttributeName
+        from AppKit import (
+            NSColor, NSForegroundColorAttributeName, NSWindowStyleMaskNonactivatingPanel,
+        )
 
         committed, tentative = '你好', '世界'
         raw = RecognitionMessage(
@@ -382,11 +422,11 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
         When: 显示一次预览后不再有任何更新
         Then: 面板在 AUTO_HIDE 秒后自行隐藏（覆盖短按/取消录音、没有 final 到达的场景）
         """
-        with patch.object(self.live_panel, 'AUTO_HIDE', 0.05):
+        with patch.object(self.live_panel, 'AUTO_HIDE', 0.5):
             self.live_panel.show('自动隐藏', '')
-            _pump_main_runloop(0.15)
-            self.assertTrue(self.live_panel._panel.isVisible(), '前置条件：show 后应可见')
-            _pump_main_runloop(0.3)
+            _pump_main_runloop(0.15)  # 远小于 AUTO_HIDE，验证还没到点就不会提前隐藏
+            self.assertTrue(self.live_panel._panel.isVisible(), '前置条件：show 后、AUTO_HIDE 前应可见')
+            _pump_main_runloop(0.6)  # 累计已超过 AUTO_HIDE(0.5s)
             self.assertFalse(self.live_panel._panel.isVisible(), '超过 AUTO_HIDE 后必须自动隐藏')
 
 
