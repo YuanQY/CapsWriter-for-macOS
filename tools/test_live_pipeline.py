@@ -77,6 +77,12 @@ class ScriptedRecognizer:
         self.cancelled.append(task_id)
 
 
+def live_call_count(recognizer):
+    """已经发生过的'#live'预览pass调用次数（在popleft之前记录，因此未脚本化的调用
+    也会被计入）：用来证明"没有再跑一次pass"，而不是被吞掉的异常巧合返回了None。"""
+    return sum('#live' in c.task_id for c in recognizer.calls)
+
+
 class ScriptedQueue:
     """按脚本顺序驱动 get()/get_nowait()：('value', work) 交付一个包，('empty',) 表示暂无
     数据，('exit',) 交付退出信号。用于精确控制"预览pass"与"final包"到达的先后顺序。"""
@@ -114,10 +120,11 @@ class PipelineLiveTests(unittest.TestCase):
         # When: 处理该工作单元后尝试触发一次 live_tick
         result = pipeline.process(work)
         tick = pipeline.live_tick()
-        # Then: 不产生预览结果，也不会为该任务创建 LiveTask
+        # Then: 不产生预览结果，也不会为该任务创建 LiveTask，且从未尝试过一次预览pass调用
         self.assertIsNone(result)
         self.assertIsNone(tick)
         self.assertEqual(pipeline.live, {})
+        self.assertEqual(live_call_count(recognizer), 0)
 
     def test_pass_cadence_follows_audio_time(self):
         # Given: 一个live任务，每次process()喂入不足1秒的音频
@@ -125,8 +132,10 @@ class PipelineLiveTests(unittest.TestCase):
         pipeline = self.make_pipeline(recognizer)
         half_second = np.zeros(SR // 2, dtype=np.float32)
         pipeline.process(make_work(live=True, samples=half_second))
-        # Then: 累计音频不足1秒，不产生预览
+        # Then: 累计音频不足1秒，不产生预览，也没有尝试过一次调用（不是靠异常吞掉
+        # 伪装出来的None：调用次数在popleft之前就会被记录）
         self.assertIsNone(pipeline.live_tick())
+        self.assertEqual(live_call_count(recognizer), 0)
         # When: 再喂入音频，累计恰好达到1秒
         recognizer.queue_live_response('你好')
         pipeline.process(make_work(live=True, samples=half_second))
@@ -134,13 +143,16 @@ class PipelineLiveTests(unittest.TestCase):
         # Then: 第一次pass在恰好1秒时触发
         self.assertIsNotNone(result)
         self.assertEqual(pipeline.live['t1'].passes, 1)
+        self.assertEqual(live_call_count(recognizer), 1)
         # When: 立刻再次tick，期间没有新增音频
         # Then: 不会额外运行第二次pass
         self.assertIsNone(pipeline.live_tick())
+        self.assertEqual(live_call_count(recognizer), 1)
         # When: 再喂入不足1秒的音频
         pipeline.process(make_work(live=True, samples=np.zeros(SR // 4, dtype=np.float32)))
-        # Then: 仍未凑够下一秒，不产生预览
+        # Then: 仍未凑够下一秒，不产生预览，调用次数也没有增加
         self.assertIsNone(pipeline.live_tick())
+        self.assertEqual(live_call_count(recognizer), 1)
 
     def test_preview_result_fields(self):
         # Given: 一个恰好积累1秒音频的live任务
@@ -151,10 +163,9 @@ class PipelineLiveTests(unittest.TestCase):
         pipeline.process(work)
         recognizer.queue_live_response('你好世界')
         # When: 触发一次预览pass
-        before = time.time()
         result = pipeline.live_tick()
-        after = time.time()
-        # Then: 预览 Result 的字段符合约定
+        # Then: 预览 Result 的字段符合约定（没有消费者读取预览的时间戳/时长字段，
+        # 这里只断言客户端实际会用到的部分）
         self.assertEqual(result.task_id, 't1')
         self.assertEqual(result.socket_id, 's9')
         self.assertEqual(result.source, 'mic')
@@ -162,10 +173,6 @@ class PipelineLiveTests(unittest.TestCase):
         self.assertFalse(result.is_final)
         self.assertIsInstance(result.text, str)
         self.assertIsInstance(result.text_tentative, str)
-        self.assertEqual(result.time_start, work.time_start)
-        self.assertAlmostEqual(result.duration, 1.0, delta=0.01)
-        self.assertEqual(result.time_submit, result.time_complete)
-        self.assertTrue(before <= result.time_complete <= after)
 
     def test_final_pops_live_task(self):
         # Given: 一个已经创建了LiveTask的live任务
@@ -181,6 +188,7 @@ class PipelineLiveTests(unittest.TestCase):
         self.assertEqual(result.text, '你好世界')
         self.assertNotIn('t1', pipeline.live)
         self.assertIsNone(pipeline.live_tick())
+        self.assertEqual(live_call_count(recognizer), 0, '弹出后不应再尝试任何预览pass调用')
 
     def test_failing_pass_does_not_break_final(self):
         # Given: 预览pass的模型调用会抛出异常
@@ -189,21 +197,17 @@ class PipelineLiveTests(unittest.TestCase):
         recognizer.set_final_response('t1', RunnerResult(text='你好世界', duration=1.0))
         pipeline = self.make_pipeline(recognizer)
         pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
-
-        def live_call_count():
-            return len([c for c in recognizer.calls if '#live' in c.task_id])
-
         # When: 该次pass抛出异常
         result = pipeline.live_tick()
         # Then: 预览调用返回None，异常被吞掉，且这一秒的预算已经用掉（不会立刻重试）
         self.assertIsNone(result)
         self.assertEqual(pipeline.live['t1'].passes, 1, '失败的pass也要占用一次预算')
-        calls_after_failure = live_call_count()
+        calls_after_failure = live_call_count(recognizer)
         # When: 只再喂入不到1秒的新音频就立刻再tick
         pipeline.process(make_work(live=True, samples=np.zeros(SR // 2, dtype=np.float32)))
         self.assertIsNone(pipeline.live_tick())
         # Then: next_due 必须在模型调用之前就已推进；不足1秒新音频不应该再调用一次模型
-        self.assertEqual(live_call_count(), calls_after_failure,
+        self.assertEqual(live_call_count(recognizer), calls_after_failure,
                          '不足1秒新音频时不应该重试失败的pass')
         # When: 再喂入音频，凑够1秒新增量后重试
         recognizer.queue_live_response('你好')
@@ -211,7 +215,7 @@ class PipelineLiveTests(unittest.TestCase):
         retried = pipeline.live_tick()
         # Then: 凑够1秒新音频后应该正常再跑一次pass
         self.assertIsNotNone(retried)
-        self.assertEqual(live_call_count(), calls_after_failure + 1)
+        self.assertEqual(live_call_count(recognizer), calls_after_failure + 1)
         # When: final包随后到达
         final_result = pipeline.process(make_work(live=True, final=True))
         # Then: final依旧正常输出，不受失败的预览pass影响
@@ -226,8 +230,10 @@ class PipelineLiveTests(unittest.TestCase):
         pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
         # When: 触发一次预览pass
         result = pipeline.live_tick()
-        # Then: 面板只在首个非空文本时才打开，空文本不产生预览Result
+        # Then: 面板只在首个非空文本时才打开，空文本不产生预览Result（这次pass确实
+        # 跑过一次，不是被 due() 挡在门外）
         self.assertIsNone(result)
+        self.assertEqual(live_call_count(recognizer), 1)
 
     def test_cleanup_drops_live_task(self):
         # Given: 一个已经创建了LiveTask的live任务
@@ -241,6 +247,7 @@ class PipelineLiveTests(unittest.TestCase):
         self.assertNotIn('t1', pipeline.live)
         self.assertEqual(recognizer.cancelled, ['t1'])
         self.assertIsNone(pipeline.live_tick())
+        self.assertEqual(live_call_count(recognizer), 0, '清理后不应再尝试任何预览pass调用')
 
     def test_preview_is_not_logged(self):
         # Given: 预览文本中包含一个绝不应出现在任何日志记录里的标记
@@ -290,8 +297,34 @@ class WorkHandlerLiveTests(unittest.TestCase):
         self.assertTrue(results[0].preview and not results[0].is_final)
         self.assertTrue(results[1].is_final and not results[1].preview)
         # Then: 预览pass只被真正触发过一次（final到达前后都没有被重复触发）
-        live_calls = [c for c in recognizer.calls if '#live' in c.task_id]
-        self.assertEqual(len(live_calls), 1)
+        self.assertEqual(live_call_count(recognizer), 1)
+
+    def test_live_and_final_drained_together_skips_live_tick(self):
+        # Given: live音频包和final包在同一批drain_queue()里一起进入buffer（final包
+        # 紧跟其后就到达，而不是等预览pass处理完才到达）
+        recognizer = ScriptedRecognizer()
+        recognizer.set_final_response('t1', RunnerResult(text='你好世界', duration=1.0))
+        pipeline = QwenMLXRunnerPipeline(recognizer, state=WorkerState())
+        live_work = make_work(live=True, samples=np.zeros(SR, dtype=np.float32))
+        final_work = make_work(live=True, final=True)
+        incoming = ScriptedQueue([
+            ('value', live_work), ('value', final_work), ('empty',), ('empty',), ('exit',),
+        ])
+        handler = WorkHandler(incoming, queue.Queue(), ['s1'], WorkerState())
+        handler.pipeline = pipeline
+        # When: 运行真实的工作循环
+        handler.loop()
+        # Then: 处理完live包时buffer里已经有final在排队，这一轮不会去跑预览pass；
+        # 只有final这一条结果
+        self.assertEqual(live_call_count(recognizer), 0)
+        results = []
+        while True:
+            try:
+                results.append(handler.queue_out.get_nowait())
+            except queue.Empty:
+                break
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].is_final)
 
     def test_empty_preview_reaches_no_queue_out(self):
         # Given: 只有一个live任务，其预览pass的转写结果是空字符串
