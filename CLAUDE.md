@@ -4,8 +4,8 @@
 
 - 实现已合并到分支 `feature/live-dictation`，尚未推送。
 - 设计变更：长句冻结窗口在真实模型端到端跑通后被移除（一次强制冻结把正确的已确认文本替换成了错误的头部识别结果）；现在每次识别都重新读入从开头到当前的全部录音。
-- 自动化检查通过：新增单元测试（live_preview 6 项、live_pipeline 11 项、live_client 12 项）、真实模型端到端测试 4/4、mutations 40/40 全部 CAUGHT，既有 `tools/` 测试无变化。
-- Fable 验收评审待进行。
+- 自动化检查通过（e673283）：新增单元测试（live_preview 6 项、live_pipeline 13 项、live_client 13 项）、真实模型端到端测试 4/4、mutations 42/42 全部 CAUGHT，既有 `tools/` 测试无变化。
+- 独立验收记录见 `openspec/changes/add-live-dictation-mode/acceptance.md`。
 - 真机验收（`tasks.md` 中的 A1–A4）等待用户确认，尚未完成。
 
 ## 2026-09-19：录音设备选择改为可配置（发布默认 default，本机 builtin）

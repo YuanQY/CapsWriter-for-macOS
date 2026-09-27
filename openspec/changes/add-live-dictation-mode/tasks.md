@@ -118,7 +118,7 @@ Test notes:
 
 - [x] 5A Opus code review (report: `review-5A.md`: 0 HIGH, 9 MEDIUM, 11 LOW; all applied in group 6) of the diff against `spec.md` and `design.md`: correctness, privacy (no partial text in logs), focus behaviour, hold mode unchanged, and the KISS / Ponytail audit checklist (every line serves a scenario, no one-caller abstraction, no new knob, no impossible-case branch, no touched line outside the task, hold path does no extra work).
 - [x] 5B Simplify pass (report: `simplify-5B.md`: two proposals, -2 lines; the ws_send merge was applied; the hoisted import was superseded by review #2, which imports live_panel only in live mode) over the whole diff (the five checks in the user's rules plus the KISS / Ponytail checklist); report the line reduction.
-- [x] 5C (40 rows; `RESULT mutate caught=40 missed=0 skipped=0 errors=0` at 3380b4e; the first run found 5 MISSED rows, each closed with a new test, never by deleting the row) Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
+- [x] 5C (42 rows; `RESULT mutate caught=42 missed=0 skipped=0 errors=0` at e673283; earlier runs found 5 MISSED rows and acceptance round 1 found 2 more gaps, each closed with a new test, never by deleting a row) Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
 - [x] 5D Update `readme.md` (the setting, what live mode shows, GPU cost, restart needed) and `CLAUDE.md` (the "流式识别策略" decision row and a dated status section; the 任务看板 table is not used for this change).
 
 Call sites to mutate (5C):
@@ -143,7 +143,7 @@ Call sites to mutate (5C):
 
 ## 7. Verify and clean
 
-- [x] 7.1 (at 1c760dc: every tools/test_*.py passes; test_live_e2e 4/4 on the real model; mutations 40/40 at 3380b4e, and the only later code change, 5e4ff2b model-dir fix from a separate task, was covered by re-running test_live_e2e and its own test_mlx_model_resolution 4/4) All `tools/test_*.py` pass; `test_live_e2e.py` passes; every `mutations.toml` row is CAUGHT; `openspec validate add-live-dictation-mode` passes.
+- [x] 7.1 (at e673283, PYTHONDONTWRITEBYTECODE=1: every tools/test_*.py passes, including test_live_e2e 4/4 on the real model, live_client 13, live_pipeline 13, live_preview 6; mutations 42/42) All `tools/test_*.py` pass; `test_live_e2e.py` passes; every `mutations.toml` row is CAUGHT; `openspec validate add-live-dictation-mode` passes.
 - [x] 7.2 `git status` shows no stray files; commit on `feature/live-dictation`; no push.
 
 ## 8. Acceptance review
