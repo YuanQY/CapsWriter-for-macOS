@@ -138,8 +138,8 @@ Call sites to mutate (5C):
 
 ## 7. Verify and clean
 
-- [ ] 7.1 All `tools/test_*.py` pass; `test_live_e2e.py` passes; every `mutations.toml` row is CAUGHT; `openspec validate add-live-dictation-mode` passes.
-- [ ] 7.2 `git status` shows no stray files; commit on `feature/live-dictation`; no push.
+- [x] 7.1 (at 1c760dc: every tools/test_*.py passes; test_live_e2e 4/4 on the real model; mutations 40/40 at 3380b4e, and the only later code change, 5e4ff2b model-dir fix from a separate task, was covered by re-running test_live_e2e and its own test_mlx_model_resolution 4/4) All `tools/test_*.py` pass; `test_live_e2e.py` passes; every `mutations.toml` row is CAUGHT; `openspec validate add-live-dictation-mode` passes.
+- [x] 7.2 `git status` shows no stray files; commit on `feature/live-dictation`; no push.
 
 ## 8. Acceptance review
 
