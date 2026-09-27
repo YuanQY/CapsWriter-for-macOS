@@ -101,14 +101,19 @@ class ModelPaths:
         1. 默认优先使用本地 8bit 目录，匹配当前已确认的新默认规格。
         2. 若 8bit 缺失，则自动回退到本地 4bit，保证项目仍可离线启动。
         3. 若本地目录都未准备好，再回退到社区 4bit 仓库 ID，方便冷启动联调。
-        4. 只把“目录非空”视为本地模型可用，避免把空目录误判成有效模型。
+        4. 只把同时含 config.json 与 *.safetensors 的目录视为本地模型可用；
+           仓库为保留目录结构跟踪了 .gitkeep，按“目录非空”判断会把全新检出的空目录误判成有效模型。
         """
         local_candidates = [
             ModelPaths.qwen3_asr_mlx_8bit_dir,
             ModelPaths.qwen3_asr_mlx_4bit_dir,
         ]
         for local_dir in local_candidates:
-            if local_dir.exists() and any(local_dir.iterdir()):
+            # 判定口径与 mlx_qwen3_asr.load_models 对齐：
+            # - _resolve_path 只在存在 config.json 时把入参当本地目录，否则当 Hub 仓库 ID，
+            #   本地相对路径不是合法仓库 ID，会直接抛 HFValidationError；
+            # - _load_safetensors 加载目录下全部 *.safetensors，文件名不固定（单文件或分片）。
+            if (local_dir / 'config.json').exists() and any(local_dir.glob('*.safetensors')):
                 return local_dir.as_posix()
         return 'mlx-community/Qwen3-ASR-1.7B-4bit'
 
