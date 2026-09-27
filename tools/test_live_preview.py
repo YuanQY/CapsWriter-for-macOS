@@ -96,6 +96,37 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual(agreement.committed, '我要把代码推送到远程仓库')
         self.assertEqual(shown[len(agreement.committed):], '')
 
+    def test_pause_hold_survives_repeated_silent_passes(self):
+        # Given: 连续三次一致的转写（带句号）先触发一次暂停提交，尾巴只剩
+        # 这一个句号（同 test_pause_commits_the_tail）
+        agreement = live_preview.Agreement()
+        for _ in range(3):
+            agreement.update('我要把代码推送到远程仓库。')
+        committed = agreement.committed
+        self.assertEqual(committed, '我要把代码推送到远程仓库')
+        # When: 说话人保持沉默，同一段话（仍带句号）被反复喂入几次；未提交
+        # 尾巴此时只剩这一个句号
+        for _ in range(3):
+            shown = agreement.update('我要把代码推送到远程仓库。')
+        # Then: 不应抛异常，已提交文本保持不变，暂定文本仍为空
+        self.assertEqual(agreement.committed, committed)
+        self.assertEqual(shown[len(agreement.committed):], '')
+
+        # Given: 换一段没有标点收尾的文本，连续三次一致同样触发暂停提交，
+        # 尾巴被清空为空字符串
+        agreement2 = live_preview.Agreement()
+        text = '今天下午三点开会讨论方案'
+        for _ in range(3):
+            agreement2.update(text)
+        committed2 = agreement2.committed
+        self.assertEqual(committed2, text)
+        # When: 继续反复喂入同一段文本，未提交尾巴此时是空的（不是标点）
+        for _ in range(3):
+            shown2 = agreement2.update(text)
+        # Then: 同样不应抛异常，已提交文本不变，暂定文本仍为空
+        self.assertEqual(agreement2.committed, committed2)
+        self.assertEqual(shown2[len(agreement2.committed):], '')
+
     def test_numeral_at_a_pause_still_waits(self):
         # Given/When: 连续三次一致的转写，末尾是一个未闭合的数字串
         agreement = live_preview.Agreement()
@@ -161,6 +192,27 @@ class AgreementTests(unittest.TestCase):
         agreement.update(text)
         # Then: 除末尾标点外的全部单元都被提交（这里没有标点）
         self.assertEqual(agreement.committed, '今天下午三点开会讨论方案')
+
+    def test_pause_needs_three_consecutive_agreeing_passes(self):
+        # Given: 第一次转写比后面多出结尾两个字（"细节"），第二、三次转写
+        # 一致且都是第一次的真前缀
+        agreement = live_preview.Agreement()
+        longer = '我们下周三上午十点开会讨论方案细节'
+        text = '我们下周三上午十点开会讨论方案'
+        agreement.update(longer)
+        agreement.update(text)
+        # When: 第三次转写与第二次一致（连续三次里只有最近两次一致，第一次不算）
+        shown = agreement.update(text)
+        # Then: 只有两次一致还不够触发暂停规则，holdback 仍然生效，不应把
+        # 整条尾巴提交掉，暂定文本不应为空
+        self.assertNotEqual(agreement.committed, text, '只有两次一致时不应整体提交')
+        self.assertNotEqual(shown[len(agreement.committed):], '',
+                             'holdback 仍应生效：两次一致还不够触发暂停规则')
+        # When: 第三次一致的转写到达（连续三次都是同一段文本）
+        shown = agreement.update(text)
+        # Then: 现在真正连续三次一致，触发暂停规则，剩余内容整体提交
+        self.assertEqual(agreement.committed, text)
+        self.assertEqual(shown[len(agreement.committed):], '')
 
 
 class LiveTaskTests(unittest.TestCase):
