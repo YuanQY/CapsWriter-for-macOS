@@ -205,6 +205,7 @@ async def _submit_qwen_mlx_runner_patch(
             time_submit=time.time(),
             context=msg.context,
             language=msg.language,
+            live=msg.live,
         )
         queue_in.put(work)
         logger.debug(
@@ -233,6 +234,7 @@ async def _submit_qwen_mlx_runner_patch(
         time_submit=time.time(),
         context=msg.context,
         language=msg.language,
+        live=msg.live,
     )
     queue_in.put(work)
     logger.debug(
