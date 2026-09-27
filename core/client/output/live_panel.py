@@ -1,7 +1,9 @@
 # coding: utf-8
 """
 实时预览面板（PyObjC，2026-09 live 听写模式）：live 模式下把已提交/待定文本
-显示在这块悬浮面板里。面板不可编辑、不接收输入，用 NonactivatingPanel +
+显示在这块悬浮面板里。已提交文本用 labelColor 且无下划线；暂定（可能还会改）
+文本用 systemBlueColor 并加单下划线，视觉上类似中文输入法尚未上屏的组字/标记
+文本，与已提交文本明显区分。面板不可编辑、不接收输入，用 NonactivatingPanel +
 orderFrontRegardless（从不 makeKeyAndOrderFront_、不激活本 App、类本身也不
 覆写 canBecomeKeyWindow）保证不抢目标应用的焦点。收到最终结果或 5 秒无新
 show() 后自动收起（generation 计数器防止过期的 callLater 关掉更晚的面板）。
@@ -23,12 +25,13 @@ from AppKit import (
     NSVisualEffectBlendingModeBehindWindow, NSVisualEffectStateActive,
     NSMutableAttributedString, NSAttributedString,
     NSForegroundColorAttributeName, NSFontAttributeName,
+    NSUnderlineStyleAttributeName, NSUnderlineStyleSingle,
 )
 from Foundation import NSRect, NSPoint, NSSize
 from PyObjCTools import AppHelper
 
 from core.client.output.edit_panel import (
-    _PANEL_W, _MARGIN, _CORNER_RADIUS, panel_origin_y,
+    _PANEL_W, _MARGIN, _CORNER_RADIUS, _MAX_SCREEN_RATIO, panel_origin_y,
 )
 
 AUTO_HIDE = 5.0        # 秒：最后一次 show() 之后无新更新，面板自动收起
@@ -106,7 +109,8 @@ def _show_on_main(committed: str, tentative: str) -> None:
     attr.appendAttributedString_(
         NSAttributedString.alloc().initWithString_attributes_(
             tentative, {NSFontAttributeName: font,
-                        NSForegroundColorAttributeName: NSColor.secondaryLabelColor()}))
+                        NSForegroundColorAttributeName: NSColor.systemBlueColor(),
+                        NSUnderlineStyleAttributeName: NSUnderlineStyleSingle}))
     _label.setAttributedStringValue_(attr)
 
     # 按内容定高；固定上边缘，面板只向下伸展或从下边缩回（同 edit_panel）。
@@ -116,9 +120,12 @@ def _show_on_main(committed: str, tentative: str) -> None:
     width = _PANEL_W - 2 * _MARGIN
     text_h = max(_MIN_LABEL_H, _label.cell().cellSizeForBounds_(
         NSRect(NSPoint(0, 0), NSSize(width, 1.0e7))).height)
-    content_h = text_h + 2 * _MARGIN
 
     screen = NSScreen.mainScreen().visibleFrame()
+    # 长时间 live 听写文本会一直变长；面板高度封顶在屏幕可视高度的 _MAX_SCREEN_RATIO，
+    # label 仍按全文本高度贴底摆放（见下方 setFrame_），超出的部分由毛玻璃裁剪容器
+    # 盖住最上面（最旧）的文字，贴底的最新（暂定）文字始终留在可见区域内。
+    content_h = min(text_h + 2 * _MARGIN, screen.size.height * _MAX_SCREEN_RATIO)
     x = screen.origin.x + (screen.size.width - _PANEL_W) / 2
     y = panel_origin_y(content_h, screen.origin.y, screen.size.height)
 
