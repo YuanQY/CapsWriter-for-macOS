@@ -91,6 +91,31 @@ the implemented rule is M3-1.0-a3** (every pass reads all audio so far). On D
 the two are identical; the cost is slower passes past about 30-45 s (1.29 s
 p95 on C's 30-74 s clips, against 0.73 s with the window).
 
+## Pause rule (measured 2026-09-27, ideal clock, 1 s passes)
+
+In the real app the user saw the last tentative words never turn committed
+while they paused with Caps Lock held: with holdback alone, the last four
+units of every pass stay tentative until release. The pause rule commits the
+whole tail, except trailing punctuation, when the uncommitted text of the last
+three passes is the same.
+
+A Tingting TTS sentence (6.6 s) with 6 s of trailing silence: with holdback
+alone "程仓库" stayed tentative from 9 s to release; with the pause rule the
+whole sentence was committed at 9 s, about 2.4 s after the speech ended. A
+second sentence ending "…答复就行" was fully committed 3 s after the speech.
+
+Current rule against the pause rule on the same passes of the public layers:
+
+| Layer | Clips | Commit error | Commit lag median | Commit rewrites | Clips with higher commit error |
+| ----- | ----- | ------------ | ----------------- | --------------- | ------------------------------ |
+| A     | 30    | 1.35 % → 1.31 % | 2.75 s → 2.75 s | 0 → 0 | 0 |
+| B     | 30    | 0.37 % → 0.37 % | 2.64 s → 2.64 s | 0 → 0 | 0 |
+| C     | 4     | 1.06 % → 1.06 % | 3.35 s → 3.28 s | 0 → 0 | 0 |
+
+- No clip got worse. The layers end at the end of speech, so they show the
+  rule on pauses inside an utterance only; the tail case is the TTS check above.
+- D (the user's own recordings) was not rerun.
+
 ## Known limits
 
 - Small samples (B 30 clips from 6 speakers, C 4 clips, D 20 clips).

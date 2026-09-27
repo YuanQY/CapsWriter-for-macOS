@@ -127,6 +127,11 @@ New file `core/server/worker/live_preview.py`. It imports `re` and `difflib`
 - `units`, `ukey`, `is_numeral`: ported from the eval harness.
 - `Agreement`: the M3-a3 path only, with no flags. Constants `AGREE = 3`,
   `HOLDBACK = 4`. Numeral hold and content alignment are always on.
+  When the uncommitted text of the last `AGREE` passes is the same, the
+  speaker has paused and new audio adds nothing, so `HOLDBACK` does not apply
+  and the whole tail is committed except trailing punctuation (added after the
+  user's real-app check: with holdback alone the last four units stayed
+  tentative until release).
   `update(text) -> str` returns committed + tentative (tentative with its
   trailing punctuation removed), and `committed` holds the committed part.
 - `LiveTask`: the per-task state and the one step function.

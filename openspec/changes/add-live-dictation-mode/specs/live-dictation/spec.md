@@ -64,7 +64,10 @@ The text of a partial pass SHALL be split into units: one CJK character, one
 Latin or digit word, or one punctuation mark. Units SHALL be compared ignoring
 letter case, and all punctuation marks SHALL compare equal. A unit SHALL be
 committed only when the last three partial passes agree on it and on every unit
-before it, and it is not among the last four units of any of those passes. A
+before it, and it is not among the last four units of any of those passes. When
+the uncommitted text of the last three passes is the same (the speaker has
+paused), the last-four-units rule SHALL NOT apply: every unit except trailing
+punctuation SHALL be committed, subject to the numeral rule. A
 numeral unit is one whose characters are all in
 `零〇一二三四五六七八九十百千万亿两点0123456789`. A numeral unit SHALL NOT be
 committed unless the next unit of the pass is a non-numeral unit that is also
@@ -95,8 +98,20 @@ between two ASCII letters or digits, a space SHALL separate them.
 #### Scenario: An insertion inside committed text does not duplicate the tail
 - **WHEN** "你好世界" is committed and the next three passes read
   "你好啊世界今天天气很好"
-- **THEN** the committed text becomes "你好世界今天", not "你好世界界今天", and
-  "天气很好" is tentative
+- **THEN** the committed text becomes "你好世界今天天气很好", not
+  "你好世界界今天天气很好" (the three passes are the same, so the pause rule
+  commits the whole tail)
+
+#### Scenario: A pause commits the tail
+- **WHEN** nothing is committed and three passes in a row read
+  "我要把代码推送到远程仓库。"
+- **THEN** the committed text is "我要把代码推送到远程仓库" and nothing is
+  tentative, and when the next passes read "我要把代码推送到远程仓库然后再说"
+  the shown text contains "然后"
+
+#### Scenario: A numeral at a pause still waits
+- **WHEN** three passes in a row read "价格是一万五千"
+- **THEN** "价格是" is committed and "一万五千" is tentative
 
 ### Requirement: Final result is unchanged by live mode
 

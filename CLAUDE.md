@@ -2,11 +2,11 @@
 
 ## 2026-09-27：实时预览模式（OpenSpec add-live-dictation-mode，实现完成，待验收）
 
-- 实现已合并到分支 `feature/live-dictation`，尚未推送。
+- 实现在分支 `feature/live-dictation`，已按用户要求推送到 `origin`（用户个人 fork），不推送到 `upstream`。
 - 设计变更：长句冻结窗口在真实模型端到端跑通后被移除（一次强制冻结把正确的已确认文本替换成了错误的头部识别结果）；现在每次识别都重新读入从开头到当前的全部录音。
-- 自动化检查通过（e673283）：新增单元测试（live_preview 6 项、live_pipeline 13 项、live_client 13 项）、真实模型端到端测试 4/4、mutations 42/42 全部 CAUGHT，既有 `tools/` 测试无变化。
-- 独立验收记录见 `openspec/changes/add-live-dictation-mode/acceptance.md`。
-- 真机验收（`tasks.md` 中的 A1–A4）等待用户确认，尚未完成。
+- 用户首次真机试用后的改动（`tasks.md` 第 9 组）：待定文字改为系统蓝色加下划线、面板高度封顶、跨轮拼接的英文单词之间补空格、停顿后尾部转为已确认。
+- 测试数量、变异测试结果和独立验收记录统一见 `openspec/changes/add-live-dictation-mode/acceptance.md`，这里不再抄数字。
+- 真机验收（`tasks.md` 中 Acceptance 组的 A1、A4–A9）等待用户确认，尚未完成。
 
 ## 2026-09-19：录音设备选择改为可配置（发布默认 default，本机 builtin）
 
@@ -184,7 +184,7 @@ launchd
 | 显示名称 | `CapsWriter for macOS` |
 | **编辑框标注行为口径（2026-08-24 用户重新声明；真机验收纠偏后现行唯一口径）** | **先分清两个概念**：数据集落盘与内存中的“可标记上一条”指针不是一回事。指针只有 `editor_confirmed`、`direct` 两种；落盘 status 只有 `corrected`、`final_unreliable`、`raw_unreliable` 三种。**编辑框 Enter**：确认关闭后立即把指针推进为 `editor_confirmed`；自动写一条 raw+用户确认 final 的 `corrected`；恢复录音开始时的目标应用并上屏。之后菜单与 ⌃⌥M 表示“标记上一条真值不可靠”，显式标记时追加 `final_unreliable`。**编辑框 Esc**：该条彻底不进入标注域——不落任何数据、不创建任何指针类型、不移动既有指针；Esc 后 ⌃⌥M 仍命中 Esc 之前最近的合法 Enter/direct 条。面板文本非空时只写剪贴板、不自动上屏；清空后不覆盖剪贴板；两者都恢复录音开始时的目标应用，音频/日记/归档既有链路继续执行。**非编辑框 direct**：默认绝不写入数据集；只有成功写入剪贴板后才把指针推进为 `direct`。之后菜单与 ⌃⌥M 表示“标记上一条转录有误”，显式标记时才写 raw-only `raw_unreliable`。**无效条与待编辑条**：都不落数据、不推进指针；无效条只由时长规则判定并保留既有输出/音频/日记链路，框内等待编辑的内容也不叫上一条。**热键**：固定 ⌃⌥M，由 macOS active event tap 吞掉 keyDown/keyUp 后异步执行，禁止透传导致系统错误音或特殊字符。**菜单**：完全由当前指针类型决定标题与动作；无指针时禁用；Esc、无效条、待编辑均不得改变菜单语义。**编辑框 UI**：面板只有编辑区域，按宽度自动换行；Enter 确认，Shift+Enter 插入换行；高度自适应并设上限，超限后可滚动；窗口水平居中、纵向靠上，顶部边界固定，高度只向下增长或从底部缩回；面板打开期间长按 Caps 不启动新录音。**通知**：标记成功通知显示被标记条的文本摘录，有 final 优先 final，否则 raw。新版记录只写 v2。 |
 | 信号处理 | SIGTERM：set_wakeup_fd + SigtermWatcher 守护线程（NSApp.run() C RunLoop 期间 Python signal handler 无法执行）→ _critical_cleanup() → os._exit(0)；SIGINT 双击确认 |
-| 流式识别策略 | 早期阶段**不**把“产品级流式识别 / 流式显示”作为优先目标，先聚焦最终结果精度。**2026-09-27 更新**：基于 `openspec/changes/add-live-dictation-mode/evidence.md` 的离线评测，新增可选的实时预览模式（`dictation_mode='live'`，默认仍为 `'hold'`）：策略 M3-1.0-a3——每 1 秒重新转写已收到的音频，三次结果一致才提交，保留最后 4 个单元不提交；上游库自带的流式识别（`mlx_qwen3_asr.streaming`）经评测被否决（最终 MER 34.6% 对比 3.6%） |
+| 流式识别策略 | 早期阶段**不**把“产品级流式识别 / 流式显示”作为优先目标，先聚焦最终结果精度。**2026-09-27 更新**：基于 `openspec/changes/add-live-dictation-mode/evidence.md` 的离线评测，新增可选的实时预览模式（`dictation_mode='live'`，默认仍为 `'hold'`）：策略 M3-1.0-a3——每 1 秒重新转写已收到的音频，三次结果一致才提交，保留最后 4 个单元不提交（三次结果的未确认部分完全相同时视为停顿，尾部除末尾标点外全部提交）；上游库自带的流式识别（`mlx_qwen3_asr.streaming`）经评测被否决（最终 MER 34.6% 对比 3.6%） |
 | MLX 后端演进路线 | 当前 `qwen_asr_mlx` 只是一层最小适配，后续精度优化主路线改为：**fork `mlx-qwen3-asr`，接管中层推理编排**（prompt 组装、language/context 策略、generation config、chunking、aligner 接法），而非继续把 `Session.transcribe()` 作为黑盒 |
 | 模型常驻内存 + 启动预热 | 2026-09-19已修正实现为实际权重页mlock，单一开关区分允许换出与强制常驻；失败不再假报成功。旧两阶段Metal预算方案不足以保证空闲驻留。验证进度见本文件本轮任务区；稳定规格见`docs/macos-architecture-decisions.md`第九节。 |
 | App 图标 | `.icns` 放 `assets/icon/app-icon.icns`（源）→ 拷入 bundle `Resources/` + `Info.plist` `CFBundleIconFile=app-icon` + 重签名；`build_launcher.sh` 每次构建自动同步。LSUIElement 不进 Dock，图标体现在 Finder / 简介 / 权限列表 |

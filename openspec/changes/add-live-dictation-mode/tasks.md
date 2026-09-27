@@ -1,8 +1,9 @@
 # Tasks: add-live-dictation-mode
 
 Roles: orchestrator = the main session (Opus). Code and tests = Sonnet agents.
-Code review = Opus agent (one tier above Sonnet). Redteam and acceptance =
-Fable. Each writing agent works in its own git worktree; read-only agents read
+Code review = Opus agent (one tier above Sonnet). Redteam = Fable. Acceptance
+= Fable in round 1, Opus from round 3 on (the user asked to save Fable quota).
+Each writing agent works in its own git worktree; read-only agents read
 `HEAD` of `feature/live-dictation`.
 
 Run tests as `.venv/bin/python tools/<name>.py -v`.
@@ -63,7 +64,7 @@ test runs from the real entry point without replacing a real dependency.
 | B9  | Each pass reads all audio so far; committed text only grows over a long recording                                       | `test_live_preview::` step test (transcriber gets all fed samples; committed only grows)                                                                                                                                                                         | `test_live_e2e::test_long_live_run_keeps_up` (30 s TTS clip; previews keep coming, each committed text extends the previous one, final matches hold)                                                                                                                                                                                                                                   |
 | B10 | Partial text is not logged or printed, on server and client                                                             | `test_live_pipeline::test_preview_is_not_logged`, `test_live_client::test_preview_is_not_logged` (real `ResultProcessor`, `client` logger captured at DEBUG)                                                                                                     | `test_live_e2e::test_live_run_streams_previews` (captures the `server` logger at DEBUG and stdout; none before the final contains preview text)                                                                                                                                                                                                                                        |
 | B11 | A failing pass skips the update and uses up its slot; final still works; error logged without text                      | `test_live_pipeline::test_failing_pass_does_not_break_final`                                                                                                                                                                                                     | Declared gap: a model failure needs an injected fault.                                                                                                                                                                                                                                                                                                                                 |
-| B12 | Client shows preview in a non-activating panel (committed normal, tentative grey), hides on final, auto-hides after 5 s | `test_live_client::test_show_does_not_activate_app`, `::test_final_hides_panel`, `::test_panel_auto_hides`, `::test_stale_auto_hide_does_not_hide_newer_panel`, `::test_long_mixed_text_label_is_not_clipped`, `::test_utf16_color_ranges_across_surrogate_pair` | `test_live_client::test_preview_message_updates_real_panel` (real JSON from the server's `RecognitionMessage.to_json`, real `from_dict`, real `ResultProcessor._handle_message`, real `live_panel` NSPanel, main run loop pumped)                                                                                                                                                      |
+| B12 | Client shows preview in a non-activating panel (committed normal, tentative system blue with an underline, height capped at 40 % of the visible screen with the newest lines shown), hides on final, auto-hides after 5 s | `test_live_client::test_show_does_not_activate_app`, `::test_final_hides_panel`, `::test_panel_auto_hides`, `::test_stale_auto_hide_does_not_hide_newer_panel`, `::test_long_mixed_text_label_is_not_clipped`, `::test_utf16_color_ranges_across_surrogate_pair`, `::test_panel_height_is_capped_for_long_text` | `test_live_client::test_preview_message_updates_real_panel` (real JSON from the server's `RecognitionMessage.to_json`, real `from_dict`, real `ResultProcessor._handle_message`, real `live_panel` NSPanel, main run loop pumped)                                                                                                                                                      |
 | B13 | Disconnect drops the live task                                                                                          | `test_live_pipeline::test_cleanup_drops_live_task`                                                                                                                                                                                                               | `test_live_pipeline::test_cleanup_via_work_handler_drops_live_task` (real `WorkHandler.cleanup()` with a controlled socket list; the socket drop itself is simulated by removing the socket id)                                                                                                                                                                                        |
 | B14 | Another engine: no pass, no error, no panel                                                                             | `test_live_pipeline::test_other_engine_pipeline_sends_no_partials` (real `WorkHandler.loop` with a pipeline that has no `live_tick`), `test_live_client::test_non_preview_partial_does_not_open_panel`                                                           | Client side:`test_live_client::test_non_preview_partial_does_not_open_panel` (real `ResultProcessor`, real panel; the other engine's ordinary non-final message is dropped). Declared gap on the server side: the stand-in returns None for non-final packets, while the real `WorkPipeline` returns a Result, so no test runs a real other-engine pipeline (it needs a second model). |
 
@@ -120,7 +121,7 @@ Test notes:
 
 - [X]  5A Opus code review (report: `review-5A.md`: 0 HIGH, 9 MEDIUM, 11 LOW; all applied in group 6) of the diff against `spec.md` and `design.md`: correctness, privacy (no partial text in logs), focus behaviour, hold mode unchanged, and the KISS / Ponytail audit checklist (every line serves a scenario, no one-caller abstraction, no new knob, no impossible-case branch, no touched line outside the task, hold path does no extra work).
 - [X]  5B Simplify pass (report: `simplify-5B.md`: two proposals, -2 lines; the ws_send merge was applied; the hoisted import was superseded by review #2, which imports live_panel only in live mode) over the whole diff (the five checks in the user's rules plus the KISS / Ponytail checklist); report the line reduction.
-- [X]  5C (42 rows; `RESULT mutate caught=42 missed=0 skipped=0 errors=0` at e673283; earlier runs found 5 MISSED rows and acceptance round 1 found 2 more gaps, each closed with a new test, never by deleting a row) Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
+- [X]  5C (row count and RESULT lines: see acceptance.md; earlier runs found 5 MISSED rows and acceptance round 1 found 2 more gaps, each closed with a new test, never by deleting a row) Write `mutations.toml` with one row per new production call site (list below) and run `python3 ~/.claude/tools/mutate.py openspec/changes/add-live-dictation-mode/mutations.toml` in the verification worktree after `python3 ~/.claude/tools/test_mutate.py` reports 8/8.
 - [X]  5D Update `readme.md` (the setting, what live mode shows, GPU cost, restart needed) and `CLAUDE.md` (the "流式识别策略" decision row and a dated status section; the 任务看板 table is not used for this change).
 
 Call sites to mutate (5C):
@@ -145,18 +146,39 @@ Call sites to mutate (5C):
 
 ## 7. Verify and clean
 
-- [X]  7.1 (at e673283, PYTHONDONTWRITEBYTECODE=1: every tools/test_*.py passes, including test_live_e2e 4/4 on the real model, live_client 13, live_pipeline 13, live_preview 6; mutations 42/42) All `tools/test_*.py` pass; `test_live_e2e.py` passes; every `mutations.toml` row is CAUGHT; `openspec validate add-live-dictation-mode` passes.
-- [X]  7.2 `git status` shows no stray files; commit on `feature/live-dictation`; no push.
+- [X]  7.1 (run with PYTHONDONTWRITEBYTECODE=1; pass counts and mutation RESULT lines: see acceptance.md) All `tools/test_*.py` pass; `test_live_e2e.py` passes; every `mutations.toml` row is CAUGHT; `openspec validate add-live-dictation-mode` passes.
+- [X]  7.2 `git status` shows no stray files; commit on `feature/live-dictation`. Push only to `origin` (the user's fork) and only when the user asks; never to `upstream`. (Pushed at the user's request on 2026-09-27.)
 
 ## 8. Acceptance review
 
-- [X]  8.1 (round 1 Fable at 44146fa: FAIL on Q2, fixed; round 3 Opus at d3217e8: `Verdict: PASS`, waiting only for the Acceptance items below; see acceptance.md) Fable acceptance in a fresh subagent with paths and commands only (`opsx:accept`).
+- [X]  8.1 (round 1 Fable at 44146fa: FAIL on Q2, fixed; round 3 Opus at d3217e8: `Verdict: NEEDS-HUMAN`, the Acceptance items below and the preview-quality decision F4 left for the user; round 4 Opus delta at 67efc8b: FAIL, fixed in group 9; see acceptance.md) Fable acceptance in a fresh subagent with paths and commands only (`opsx:accept`).
+
+## 9. Post-acceptance changes (2026-09-27, after the user's first real-app check)
+
+Code and tests: one Sonnet lane in worktree `live/pause-commit` (9.3, 9.4).
+Runs with it: the public-layer comparison (9.5, orchestrator) and these doc
+edits (orchestrator). 9.6 and 9.7 wait on the merge.
+
+- [X]  9.1 Tentative text in system blue with an underline; panel height capped at 40 % of the visible screen with the newest lines shown (92a04d7). The user found grey too close to the normal colour; a long dictation grew past the screen.
+- [X]  9.2 A space between Latin words that meet across passes (`_join`, 5121066), found by the preview-loss diagnosis on the public layers.
+- [ ]  9.3 Pause commits the tail (spec: Commit rule; scenarios "A pause commits the tail", "A numeral at a pause still waits"). The user saw the last tentative words never turn committed while pausing. Changed expected value, declared: `test_live_preview::test_insertion_does_not_duplicate_tail` committed "你好世界今天" becomes "你好世界今天天气很好" (its three passes are the same, so the pause rule applies).
+- [ ]  9.4 Round-4 findings: Latin spacing and the pause rule tested through the real `WorkHandler.loop` / `live_tick`; mutation rows for `.lstrip()` in `LiveTask.step` and in `live_tick`, for the pause branch, for committing trailing punctuation, and for a 20 pt cap overshoot; the cap test bound tightened from `cap + 2 * margin + 0.5` to `cap + 1`. Declared gap: the real-model e2e has no mixed Chinese-English clip (the only reliable TTS voice reads Mandarin), so Latin spacing on the real engine is left to A7.
+- [X]  9.5 Compare the current and the pause rule on the same passes of public layers A, B and C (commit error, rewrites, commit lag); result in `evidence.md`, "Pause rule".
+- [ ]  9.6 Simplify pass over the group 9 diff.
+- [ ]  9.7 Opus delta acceptance over 67efc8b..HEAD; rounds 4 and 5 go into `acceptance.md` after round 3, unchanged.
 
 ## Acceptance
 
-Items for the user in the running app. Never ticked by an agent.
+Items for the user in the running app. Never ticked by an agent. A1 and A4
+were confirmed on e586500 code and must be checked again, because group 9
+changes the paths they exercise; A2 and A3 stay confirmed.
 
-- [X]  A1 With `dictation_mode = 'live'` and `capswriter restart`, hold Caps Lock in a text field and speak naturally, with fillers and self-corrections: the panel shows text within about 2 s of the first word and updates while speaking; the text field keeps focus and its caret.
+- [ ]  A1 With `dictation_mode = 'live'` and `capswriter restart`, hold Caps Lock in a text field and speak naturally, with fillers and self-corrections: the panel shows text within about 2 s of the first word and updates while speaking; the text field keeps focus and its caret.
 - [X]  A2 On release in live mode, the pasted text is the final text and the panel closes.
 - [X]  A3 With the default `'hold'`, dictation looks and behaves as before (no panel).
-- [X]  A4 A dictation of about one minute in live mode keeps updating to the end.
+- [ ]  A4 A dictation of about one minute in live mode keeps updating to the end.
+- [ ]  A5 Tentative words are blue with an underline and readable in light and dark mode; committed words are the normal colour.
+- [ ]  A6 In a dictation of one to two minutes the panel stops growing at about 40 % of the screen height, and the newest words stay visible at the bottom.
+- [ ]  A7 A Chinese sentence with an English phrase and a pause, e.g. "我们聊到了 dessert, you know, 还不错", never shows glued words such as "dessertyou".
+- [ ]  A8 After you stop speaking and keep holding Caps Lock for about 3 s, the blue underlined tail turns to the normal colour (a sentence that ends in a number keeps the number blue).
+- [ ]  A9 Decide whether the preview quality is acceptable: wrong committed text and commit lag on your own voice, figures in `evidence.md` (F4 in acceptance.md round 3).
