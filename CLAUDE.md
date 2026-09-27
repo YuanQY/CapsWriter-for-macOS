@@ -1,11 +1,12 @@
 # CapsWriter-Offline 当前阶段同步
 
-## 2026-09-27：实时预览模式（OpenSpec add-live-dictation-mode，实现中）
+## 2026-09-27：实时预览模式（OpenSpec add-live-dictation-mode，实现完成，待验收）
 
-- 目标：录音期间可选显示识别预览，让用户在长句松手前就能看到识别情况；默认行为（`hold`）不变。
-- 位置：`openspec/changes/add-live-dictation-mode/`（proposal / design / spec / evidence）；分支 `feature/live-dictation`，尚未推送。
-- 状态：spec 与 design 已由 Fable 做过 redteam；实现按并行 lane 推进中，尚未合并。
-- 真机验收（预览面板不抢焦点、录音时的真实体验）需要用户在真实 App 中确认，尚未完成。
+- 实现已合并到分支 `feature/live-dictation`，尚未推送。
+- 设计变更：长句冻结窗口在真实模型端到端跑通后被移除（一次强制冻结把正确的已确认文本替换成了错误的头部识别结果）；现在每次识别都重新读入从开头到当前的全部录音。
+- 自动化检查通过：新增单元测试（live_preview 6 项、live_pipeline 11 项、live_client 12 项）、真实模型端到端测试 4/4、mutations 40/40 全部 CAUGHT，既有 `tools/` 测试无变化。
+- Fable 验收评审待进行。
+- 真机验收（`tasks.md` 中的 A1–A4）等待用户确认，尚未完成。
 
 ## 2026-09-19：录音设备选择改为可配置（发布默认 default，本机 builtin）
 
