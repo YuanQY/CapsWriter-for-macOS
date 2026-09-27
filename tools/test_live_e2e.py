@@ -314,6 +314,20 @@ class LiveE2ETests(unittest.TestCase):
         self.assertFalse(any(m.preview for m in after_final),
                          'final之后不应该再收到该任务的预览消息')
 
+    def test_pause_after_speech_leaves_no_tentative_text(self):
+        # Given: 一段真实语音，末尾接上至少4秒静音（模拟说话人说完之后停顿）
+        audio = self.synth('今天的会议先开到这里', 'pause_silence')
+        audio = np.concatenate([audio, np.zeros(int(4.5 * SR), dtype=np.float32)])
+        task_id = self.next_task_id('pause')
+        # When: 完整跑一遍这段"语音+静音"的实时录音
+        messages, _, _ = asyncio.run(_record(self.harness.uri, audio, task_id, live=True,
+                                              timeout=len(audio) / SR + 20))
+        previews = [m for m in messages if m.preview]
+        # Then: 静音期间连续多次pass的转写趋于一致，触发暂停规则；最后一条预览
+        # 不应再留有暂定文本
+        self.assertGreaterEqual(len(previews), 1, '这段录音至少应产生一次预览')
+        self.assertEqual(previews[-1].text_tentative, '')
+
     def test_long_live_run_keeps_up(self):
         # Given: 一段约30秒的真实语音（每次pass都要重新转写目前为止的全部音频，
         # 越往后单次pass耗时越长）

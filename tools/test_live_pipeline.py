@@ -288,6 +288,35 @@ class PipelineLiveTests(unittest.TestCase):
         for line in cm.output:
             self.assertNotIn(marker, line, '预览文本不得出现在任何日志记录里')
 
+    def test_latin_word_spacing_through_the_production_path(self):
+        # Given: 一个live任务，脚本化转写复现test_live_preview.py里的"dessert"场景
+        # （提交时"dessert"后面没有跟着空格，随后一个pass在其后接了新单词"you"）
+        recognizer = ScriptedRecognizer()
+        pipeline = self.make_pipeline(recognizer)
+        for text in ('我们聊到了dessert，好吃吗',
+                     '我们聊到了dessert，好吃吗还不错',
+                     '我们聊到了dessert，好吃吗还不错的样子',
+                     '我们聊到了dessert you know 好吃吗还不错'):
+            recognizer.queue_live_response(text)
+            pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
+            result = pipeline.live_tick()
+        # Then: 已提交+暂定文本里"dessert"和"you"之间补了一个空格，不会粘连
+        shown = result.text + result.text_tentative
+        self.assertIn('dessert you', shown)
+        self.assertNotIn('dessertyou', shown)
+
+    def test_pause_through_the_production_path_commits_the_tail(self):
+        # Given: 一个live任务，连续三次1秒pass的脚本化转写完全一致，末尾带句号
+        recognizer = ScriptedRecognizer()
+        pipeline = self.make_pipeline(recognizer)
+        for _ in range(3):
+            recognizer.queue_live_response('我要把代码推送到远程仓库。')
+            pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
+            result = pipeline.live_tick()
+        # Then: 除末尾标点外全部提交，暂定文本为空（说话人已经停顿，holdback 不适用）
+        self.assertEqual(result.text, '我要把代码推送到远程仓库')
+        self.assertEqual(result.text_tentative, '')
+
 
 class WorkHandlerLiveTests(unittest.TestCase):
     """B8：用受控队列驱动真实 WorkHandler.loop()，检查final不会排在预览pass之后。"""

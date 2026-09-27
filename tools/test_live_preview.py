@@ -71,20 +71,53 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual(agreement.committed, '价格是一万五千块')
 
     def test_insertion_does_not_duplicate_tail(self):
-        # Given: "你好世界"已经提交（用三次一致的公开update()调用达到这个状态，
-        # 而不是直接写内部字段）
+        # Given: "你好世界今天天气"已经提交（用三次一致的公开update()调用达到这个
+        # 状态；三次一致触发暂停规则，除标点外全部提交，这里没有标点）
         agreement = live_preview.Agreement()
         for _ in range(3):
             agreement.update('你好世界今天天气')
-        self.assertEqual(agreement.committed, '你好世界')
-        # When: 接下来三次转写都在"世界"前插入了"啊"，并在"世界"后新增了"今天天气很好"
+        self.assertEqual(agreement.committed, '你好世界今天天气')
+        # When: 接下来三次转写都在"世界"前插入了"啊"，并在"世界"后新增了"很好"
         text = '你好啊世界今天天气很好'
         for _ in range(2):
             agreement.update(text)
         shown = agreement.update(text)
-        # Then: 按内容对齐找到"世界"后的尾部，提交"你好世界今天"而不是位置对齐导致的重复"界"
-        self.assertEqual(agreement.committed, '你好世界今天')
-        self.assertEqual(shown[len(agreement.committed):], '天气很好')
+        # Then: 按内容对齐找到"天气"后的尾部，提交"你好世界今天天气很好"而不是位置
+        # 对齐导致的重复"气"（这三次转写同样一致，触发暂停规则，全部提交）
+        self.assertEqual(agreement.committed, '你好世界今天天气很好')
+        self.assertEqual(shown[len(agreement.committed):], '')
+
+    def test_pause_commits_the_tail(self):
+        # Given/When: 连续三次一致的转写，且以句号收尾（说话人已经停顿）
+        agreement = live_preview.Agreement()
+        for _ in range(3):
+            shown = agreement.update('我要把代码推送到远程仓库。')
+        # Then: 除末尾标点外全部提交，暂定文本为空（holdback 不适用）
+        self.assertEqual(agreement.committed, '我要把代码推送到远程仓库')
+        self.assertEqual(shown[len(agreement.committed):], '')
+
+    def test_numeral_at_a_pause_still_waits(self):
+        # Given/When: 连续三次一致的转写，末尾是一个未闭合的数字串
+        agreement = live_preview.Agreement()
+        for _ in range(3):
+            shown = agreement.update('价格是一万五千')
+        # Then: 数字串整体持有规则仍然生效，暂停也不会把半截数字提前提交
+        self.assertEqual(agreement.committed, '价格是')
+        self.assertEqual(shown[len(agreement.committed):], '一万五千')
+
+    def test_speech_after_a_pause_loses_nothing(self):
+        # Given: 先触发一次暂停提交（同上一场景）
+        agreement = live_preview.Agreement()
+        for _ in range(3):
+            agreement.update('我要把代码推送到远程仓库。')
+        self.assertEqual(agreement.committed, '我要把代码推送到远程仓库')
+        # When: 说话人继续说话，后续三次转写逐步增加"然后"及其后的内容
+        for text in ('我要把代码推送到远程仓库然后',
+                     '我要把代码推送到远程仓库然后再说',
+                     '我要把代码推送到远程仓库，然后再说一下'):
+            shown = agreement.update(text)
+            # Then: 每次展示的文本都包含这次转写里的"然后"，没有单元被漏掉
+            self.assertIn('然后', shown)
 
     def test_trailing_punctuation_hidden(self):
         # Given/When: 单次转写以句号结尾
@@ -124,10 +157,10 @@ class AgreementTests(unittest.TestCase):
         agreement.update(text)
         # Then: 两次一致还不够，agree=3 要求第三次
         self.assertEqual(agreement.committed, '', '只有两次一致时不应提交')
-        # When: 第三次转写依然一致
+        # When: 第三次转写依然一致（三次一致触发暂停规则，holdback 不适用）
         agreement.update(text)
-        # Then: 提交除保留尾部（holdback=4）外的全部单元
-        self.assertEqual(agreement.committed, '今天下午三点开会')
+        # Then: 除末尾标点外的全部单元都被提交（这里没有标点）
+        self.assertEqual(agreement.committed, '今天下午三点开会讨论方案')
 
 
 class LiveTaskTests(unittest.TestCase):

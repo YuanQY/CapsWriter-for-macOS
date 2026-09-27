@@ -110,6 +110,12 @@ old  = '''        if not committed and not tentative:'''
 new  = '''        if False:'''
 
 [[mutation]]
+name = "live_tick strips the space before tentative text"
+file = "core/server/worker/qwen_mlx_runner_pipeline.py"
+old  = '''                text_tentative=tentative,'''
+new  = '''                text_tentative=tentative.lstrip(),'''
+
+[[mutation]]
 name = "work handler never ticks"
 file = "core/server/worker/work_handler.py"
 old  = '''result = self.pipeline.live_tick()'''
@@ -275,6 +281,24 @@ new  = '''        audio = np.concatenate(self._chunks)
         self.next_due = self._total_samples + INTERVAL * SR'''
 
 [[mutation]]
+name = "pause keeps the holdback"
+file = "core/server/worker/live_preview.py"
+old  = '''if all(t == tail_keys for t in tails):'''
+new  = '''if False:'''
+
+[[mutation]]
+name = "pause commits trailing punctuation"
+file = "core/server/worker/live_preview.py"
+old  = '''while limit and tail_keys[limit - 1] == 'P':'''
+new  = '''while False:'''
+
+[[mutation]]
+name = "step strips the space before tentative text"
+file = "core/server/worker/live_preview.py"
+old  = '''return committed, shown[len(committed):]'''
+new  = '''return committed, shown[len(committed):].lstrip()'''
+
+[[mutation]]
 name = "label height ignores the wrapped text"
 file = "core/client/output/live_panel.py"
 old  = '''    text_h = max(_MIN_LABEL_H, _label.cell().cellSizeForBounds_('''
@@ -285,6 +309,12 @@ name = "panel height is not capped"
 file = "core/client/output/live_panel.py"
 old  = '''    content_h = min(text_h + 2 * _MARGIN, screen.size.height * _MAX_SCREEN_RATIO)'''
 new  = '''    content_h = text_h + 2 * _MARGIN'''
+
+[[mutation]]
+name = "panel height cap overshoots by 20 pt"
+file = "core/client/output/live_panel.py"
+old  = '''    content_h = min(text_h + 2 * _MARGIN, screen.size.height * _MAX_SCREEN_RATIO)'''
+new  = '''    content_h = min(text_h + 2 * _MARGIN, screen.size.height * _MAX_SCREEN_RATIO) + 20'''
 
 [[mutation]]
 name = "tentative text drawn in the normal colour"

@@ -64,7 +64,9 @@ class Agreement:
     都通过内容对齐（difflib）而不是位置去定位"已提交部分之后"的尾巴，这样中间
     插入一个词也不会让已提交文本被误判重复。数字串（如"一万九千"）会一直原样
     悬空在暂定文本里，直到后面跟着一个满足上面两个条件、可以被提交的非数字
-    unit，数字串才和它一起整体提交，避免把读到一半的数字提前钉死。
+    unit，数字串才和它一起整体提交，避免把读到一半的数字提前钉死。当连续三次
+    pass 的暂定尾巴完全一致（说话人停顿）时不再受 HOLDBACK 限制，除末尾标点外
+    全部提交，但数字串整体持有规则仍然生效。
     """
 
     def __init__(self):
@@ -90,6 +92,12 @@ class Agreement:
         tails = self._history[-(AGREE - 1):] + [tail_keys]
         if len(tails) == AGREE:
             limit = min(len(t) for t in tails) - HOLDBACK
+            if all(t == tail_keys for t in tails):
+                # 连续三次的暂定尾巴完全一致：说话人已经停顿，不再有新音频会
+                # 改写它，末尾保留（holdback）规则不适用，只留末尾标点不提交。
+                limit = len(tail_keys)
+                while limit and tail_keys[limit - 1] == 'P':
+                    limit -= 1
             m = 0
             while m < limit and all(t[m] == tail_keys[m] for t in tails):
                 m += 1
