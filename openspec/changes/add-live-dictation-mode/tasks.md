@@ -63,7 +63,7 @@ test runs from the real entry point without replacing a real dependency.
 | B11 | A failing pass skips the update and uses up its slot; final still works; error logged without text | `test_live_pipeline::test_failing_pass_does_not_break_final` | Declared gap: a model failure needs an injected fault. |
 | B12 | Client shows preview in a non-activating panel (committed normal, tentative grey), hides on final, auto-hides after 5 s | `test_live_client::test_show_does_not_activate_app`, `::test_final_hides_panel`, `::test_panel_auto_hides`, `::test_stale_auto_hide_does_not_hide_newer_panel`, `::test_long_mixed_text_label_is_not_clipped`, `::test_utf16_color_ranges_across_surrogate_pair` | `test_live_client::test_preview_message_updates_real_panel` (real JSON from the server's `RecognitionMessage.to_json`, real `from_dict`, real `ResultProcessor._handle_message`, real `live_panel` NSPanel, main run loop pumped) |
 | B13 | Disconnect drops the live task | `test_live_pipeline::test_cleanup_drops_live_task` | `test_live_pipeline::test_cleanup_via_work_handler_drops_live_task` (real `WorkHandler.cleanup()` with a controlled socket list; the socket drop itself is simulated by removing the socket id) |
-| B14 | Another engine: a pipeline without `live_tick` gets no pass and no error | `test_live_pipeline::test_other_engine_pipeline_sends_no_partials` | same test (real `WorkHandler.loop`; the other engine's pipeline is a stand-in with only `process()`) |
+| B14 | Another engine: no pass, no error, no panel | `test_live_pipeline::test_other_engine_pipeline_sends_no_partials` (real `WorkHandler.loop` with a pipeline that has no `live_tick`), `test_live_client::test_non_preview_partial_does_not_open_panel` | Client side: `test_live_client::test_non_preview_partial_does_not_open_panel` (real `ResultProcessor`, real panel; the other engine's ordinary non-final message is dropped). Declared gap on the server side: the stand-in returns None for non-final packets, while the real `WorkPipeline` returns a Result, so no test runs a real other-engine pipeline (it needs a second model). |
 
 Test notes:
 
@@ -89,7 +89,11 @@ Test notes:
   `feed_audio_patch`), the queue in scheduling tests, the output/paste side of
   `ResultProcessor` (so tests never type into the user's apps), and a minimal
   `app` object that holds the real `ClientState` and the real
-  `WebSocketManager` for the recorder tests.
+  `WebSocketManager` for the recorder tests. Also used: `_FakeState` and
+  `_FakeHotword` on the `ResultProcessor` final path (state and hotword
+  collaborators, as in `test_editor_result_flow.py`), and `NoLiveTickPipeline`
+  in `test_live_pipeline.py` (a pipeline without `live_tick`, standing in for
+  another engine).
 
 - [x] 2.1 Fable redteam audits requirements, design and this plan in one round; findings in `adversarial-*.md`; orchestrator answers each and updates the artifacts.
 

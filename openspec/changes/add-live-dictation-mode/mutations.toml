@@ -279,3 +279,9 @@ name = "work handler ticks a pipeline without live_tick"
 file = "core/server/worker/work_handler.py"
 old  = ''' and hasattr(self.pipeline, 'live_tick'):'''
 new  = ''':'''
+
+[[mutation]]
+name = "other engines' non-final messages open the panel"
+file = "core/client/output/result_processor.py"
+old  = '''        if message.preview:'''
+new  = '''        if not message.is_final:'''
