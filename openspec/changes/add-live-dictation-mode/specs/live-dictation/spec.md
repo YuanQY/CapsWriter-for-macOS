@@ -38,7 +38,9 @@ text is formatted and substituted.
 #### Scenario: First words appear while speaking
 - **WHEN** the user starts a recording in live mode and starts speaking
 - **THEN** the panel shows recognized text within 2 s of the first spoken word
-  and updates about once per second while the user speaks
+  and updates about once per second while the user speaks (for recordings
+  longer than about 45 s one pass takes longer than 1 s, and updates follow
+  the pass time)
 
 #### Scenario: Focus stays in the target app
 - **WHEN** the panel is shown or updated
@@ -48,8 +50,7 @@ text is formatted and substituted.
 #### Scenario: Committed text does not change during the utterance
 - **WHEN** a unit of text has been shown as committed
 - **THEN** later updates during the same recording keep it unchanged, and only
-  the tentative part may change, except in the forced freeze described under
-  "Long utterances stay within the pass budget"
+  the tentative part may change
 
 #### Scenario: A short press or a cancelled recording
 - **WHEN** a recording ends with no final message, or before any partial text
@@ -108,42 +109,16 @@ partial pass already running, and SHALL NOT change its result.
 - **THEN** no new partial pass starts for that task and the final pass starts as
   soon as the running one ends
 
-### Requirement: Long utterances stay within the pass budget
+### Requirement: Each partial pass reads the whole recording
 
-Audio is split into 20 ms frames. The pause threshold SHALL be 0.2 times the
-median frame RMS of the live segment. When the live segment of a recording is
-longer than 15 s, the server SHALL take the quietest frame between 7.5 s after
-the segment start and 3 s before its end, and treat it as a pause if its RMS is
-at most the threshold. It SHALL transcribe the audio before the pause and freeze
-it only if that transcript starts with the committed units of the segment; the
-frozen text is then the committed text plus the rest of that transcript. When
-the segment is longer than 25 s, it SHALL freeze at that quietest frame even if
-it is not a pause and even if the transcript does not start with the committed
-units; in that case the frozen text is that transcript and replaces the
-committed text of the segment. Each partial pass SHALL then cover only the audio
-after the last freeze.
+Each partial pass SHALL transcribe all audio of the recording received so far.
+A new pass SHALL start only after at least 1 s of new audio has arrived since
+the previous pass started.
 
-#### Scenario: A one-minute dictation keeps up
+#### Scenario: A one-minute dictation
 - **WHEN** the user dictates for 60 s in live mode
-- **THEN** no partial pass covers more than 25 s of audio plus the audio received
-  since the previous pass, and the final text still covers the whole recording
-
-#### Scenario: A freeze keeps agreed committed text
-- **WHEN** the segment is 16 s long, a pause is found, and the transcript before
-  the pause starts with the committed units
-- **THEN** the committed text is unchanged and the rest of that transcript is
-  added to it
-
-#### Scenario: A freeze waits for agreement until 25 s
-- **WHEN** the segment is 16 s long, a pause is found, and the transcript before
-  the pause does not start with the committed units
-- **THEN** nothing is frozen and the committed text is unchanged
-
-#### Scenario: A forced freeze replaces disagreeing committed text
-- **WHEN** the segment is 26 s long and the transcript before the quietest frame
-  does not start with the committed units
-- **THEN** the segment is frozen at that frame and its committed text is replaced
-  by that transcript
+- **THEN** previews keep coming until release, committed text never changes,
+  and the final text covers the whole recording
 
 ### Requirement: Partial text stays private and transient
 

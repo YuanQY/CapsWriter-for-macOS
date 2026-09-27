@@ -58,7 +58,7 @@ test runs from the real entry point without replacing a real dependency.
 | B6 | Commit rule (three passes, holdback 4, numeral hold, content alignment) | `test_live_preview::test_tail_word_not_committed_early`, `::test_open_numeral_run_waits`, `::test_insertion_does_not_duplicate_tail`, `::test_trailing_punctuation_hidden`, `::test_commits_on_third_agreeing_pass` | `test_live_e2e::test_live_run_streams_previews` (committed text of each preview extends the previous one) |
 | B7 | Final equals the hold-mode final; no preview after the final | `test_live_pipeline::test_final_pops_live_task` | `test_live_e2e::test_live_final_matches_hold` |
 | B8 | Final waits for at most the running pass; no pass while a final is buffered | `test_live_pipeline::test_final_is_not_queued_behind_passes` | Declared gap: the order cannot be forced through a real socket without timing. Covered by the real `WorkHandler.loop` and real pipeline with a scripted engine and a controlled queue. |
-| B9 | Long segment: pass covers the audio after the last freeze; freeze keeps agreed committed text; waits below 25 s when the head disagrees; forced freeze at 25 s replaces | `test_live_preview::test_freeze_keeps_agreed_committed`, `::test_freeze_waits_when_head_disagrees`, `::test_forced_freeze_replaces_head`, `::test_pass_audio_is_bounded` | `test_live_e2e::test_long_live_run_keeps_up` (30 s TTS clip; previews keep coming, final matches hold) |
+| B9 | Each pass reads all audio so far; committed text only grows over a long recording | `test_live_preview::` step test (transcriber gets all fed samples; committed only grows) | `test_live_e2e::test_long_live_run_keeps_up` (30 s TTS clip; previews keep coming, each committed text extends the previous one, final matches hold) |
 | B10 | Partial text is not logged or printed, on server and client | `test_live_pipeline::test_preview_is_not_logged`, `test_live_client::test_preview_is_not_logged` (real `ResultProcessor`, `client` logger captured at DEBUG) | `test_live_e2e::test_live_run_streams_previews` (captures the `server` logger at DEBUG and stdout; none before the final contains preview text) |
 | B11 | A failing pass skips the update and uses up its slot; final still works; error logged without text | `test_live_pipeline::test_failing_pass_does_not_break_final` | Declared gap: a model failure needs an injected fault. |
 | B12 | Client shows preview in a non-activating panel (committed normal, tentative grey), hides on final, auto-hides after 5 s | `test_live_client::test_panel_is_non_activating`, `::test_panel_colours`, `::test_final_hides_panel`, `::test_panel_auto_hides` | `test_live_client::test_preview_message_updates_real_panel` (real JSON from the server's `RecognitionMessage.to_json`, real `from_dict`, real `ResultProcessor._handle_message`, real `live_panel` NSPanel, main run loop pumped) |
@@ -97,7 +97,7 @@ Test notes:
 - [ ] 3A.1 Write `tools/test_live_preview.py` and `tools/test_live_pipeline.py` (B1, B4-B11, B13) against the API in `design.md`.
 - [ ] 3A.2 Write `tools/test_live_e2e.py` (B1, B4-B7, B9, B10).
 - [ ] 3A.3 Validate: run the new tests on the group 1 commit; each must fail (import error for the new module counts), and record the failure lines.
-- [ ] 3B.1 Implement `live_preview.py` by porting the eval's `M3-1.0-a3-w15` path (no flags) from `~/code/open-source/capswriter-ab/stream_eval/run_eval.py`.
+- [ ] 3B.1 Implement `live_preview.py` by porting the eval's `M3-1.0-a3` path (no flags) from `~/code/open-source/capswriter-ab/stream_eval/run_eval.py`. (The w15 window was ported first and removed after the real-model e2e run; see design D5.)
 - [ ] 3B.2 Implement D2, D4, D6 and D7 in the pipeline, work handler, `ws_recv` and `ws_send`.
 - [ ] 3C.1 Write `tools/test_live_client.py` (B1-B3, B12) against the API in `design.md`.
 - [ ] 3C.2 Validate: run it on the group 1 commit; each case must fail; record the failure lines.
@@ -130,7 +130,7 @@ Call sites to mutate (5C):
 - `RecognitionMessage.from_dict`: `preview` and `text_tentative` reads
 - `result_processor`: preview branch `show`; `hide` on final
 - `live_panel`: non-activating style; `setHidesOnDeactivate_(False)`; `orderFrontRegardless`; auto-hide generation check
-- `live_preview`: `AGREE`, `HOLDBACK`, `WINDOW`, `FORCE`, the pause ratio, the consistency check
+- `live_preview`: `AGREE`, `HOLDBACK`, `INTERVAL`, the numeral hold, the content alignment, the trailing-punctuation trim, the whole-audio slice passed to `transcribe`
 
 ## 6. Apply findings
 

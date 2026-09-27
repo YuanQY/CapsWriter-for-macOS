@@ -24,8 +24,8 @@ client recorder --AudioMessage (every block)--> ws_recv --Work--> queue_in
 
 The evaluation (`evidence.md`) chose M3-1.0-a3: every 1 s re-transcribe the
 audio heard so far, commit only what three passes agree on, hold back the last
-four units, hold open numeral runs, align the tail by content, and past 15 s
-freeze the segment start at a pause.
+four units, hold open numeral runs, and align the tail by content. The eval's
+extra 15 s pause freeze (w15) was implemented first and then removed (D5).
 
 ## Goals / Non-Goals
 
@@ -63,9 +63,8 @@ streaming, new dependencies).
   existing optional-hook pattern (`hasattr(self.pipeline, 'cleanup_tasks')`),
   so `WorkPipeline` is not touched.
 - If `live_tick()` returns a `Result`, put it on `queue_out`.
-- A tick runs at most one pass. A pass is one `LiveTask.step()`: one model call,
-  or two when a freeze is tried (head plus segment, D5). The evaluation's pass
-  cost includes both calls.
+- A tick runs at most one pass. A pass is one `LiveTask.step()`: one model call
+  over all audio received so far.
 - Why here:
   - The model is single-threaded on one GPU. A pass in the same loop needs no
     thread, no lock and no second model copy.
@@ -119,45 +118,40 @@ streaming, new dependencies).
 - Memory: 60 s of 16 kHz float32 is 3.8 MB, for live tasks only.
 - No engine or submodule change.
 
-### D5. A pure module for the commit rule and the segment window
+### D5. A pure module for the commit rule
 
-New file `core/server/worker/live_preview.py`. It imports numpy, `re` and
-`difflib` only (no MLX), so it runs in fast unit tests.
+New file `core/server/worker/live_preview.py`. It imports `re` and `difflib`
+(and numpy for the audio chunks) only, no MLX, so it runs in fast unit tests.
 
-- `units`, `ukey`, `is_numeral`, `join`: ported from the eval harness.
+- `units`, `ukey`, `is_numeral`: ported from the eval harness.
 - `Agreement`: the M3-a3 path only, with no flags. Constants `AGREE = 3`,
   `HOLDBACK = 4`. Numeral hold and content alignment are always on.
   `update(text) -> str` returns committed + tentative (tentative with its
   trailing punctuation removed), and `committed` holds the committed part.
-- `pause_cut`, `quiet_cut`: ported unchanged (20 ms frames of 320 samples,
-  ratio 0.2).
 - `LiveTask`: the per-task state and the one step function.
-  - Fields: audio chunks, total samples, `seg_start`, `frozen`, `agreement`,
-    `next_due` (samples), `passes`, plus `socket_id`, `source`, `context`,
-    `language`, `time_start` copied from the first `Work`.
+  - Fields: audio chunks, total samples, `agreement`, `next_due` (samples),
+    `passes`, and the first `Work` (socket, source, context, language,
+    start time).
   - `feed(samples)`, `due() -> bool`.
   - `step(transcribe) -> (committed, tentative)`: `transcribe` is a callable
-    `audio -> str`. The pipeline passes a closure over `feed_audio_patch`;
-    unit tests pass a scripted function. This keeps the rule free of the model
-    and lets the pipeline test use the real one.
-- Window rule inside `step` (constants `WINDOW = 15.0`, `FORCE = 25.0`):
-  - If the live segment is longer than `WINDOW`, search for a pause in
-    `[seg_start + WINDOW/2, end - 3 s]`. If none is found and the segment is
-    longer than `FORCE`, use the quietest frame.
-  - With a cut, transcribe the head `audio[seg_start:cut]`. If its first
-    units match the agreement's committed keys, freeze
-    `frozen = join(frozen, committed + rest_of_head)`. If they do not match,
-    freeze only when forced, and then `frozen = join(frozen, head)`. After a
-    freeze, `seg_start = cut` and a fresh `Agreement`.
-  - Then transcribe `audio[seg_start:end]` and update the agreement.
-  - `committed = join(frozen, agreement.committed)`; `tentative` is the rest of
-    `join(frozen, agreement.update(text))`.
-- This is the eval's `M3-1.0-a3-w15` code path, ported as is. Two simpler
-  freeze rules were measured and rejected (`evidence.md`, "Long-utterance
-  window"): freezing at every pause with content alignment, and aligning on a
-  forced freeze instead of replacing. Both raised the commit error on C from
-  1.4 % to 5.0 % and 10.3 %. The forced replace is what corrects a wrong
-  commit, so the spec allows committed text to change in that one case.
+    `audio -> str` over all audio so far. The pipeline passes a closure over
+    `feed_audio_patch`; unit tests pass a scripted function. This keeps the
+    rule free of the model and lets the pipeline test use the real one.
+- No segment window. The first version ported the eval's `M3-1.0-a3-w15`
+  window (freeze the segment start at a pause past 15 s, force it at 25 s).
+  The real-model e2e run on a 30 s clip showed its failure mode: the head
+  transcript over 0-12 s read "聊医疗" while every full pass read "聊一聊", so
+  no agreed freeze happened, and the forced freeze at 26 s replaced correct
+  committed text with the wrong head. The window was removed because:
+  - "committed text never changes" is the property that makes black text
+    trustworthy, and without the window it has no exception;
+  - on the user's own recordings (D) a3 and a3-w15 gave identical results;
+  - its only measured gain is pass cost past about 30 s (1.29 s to 0.73 s p95
+    on 30-74 s clips);
+  - it removes about 40 lines and four tests.
+  The cost: past about 45 s a pass takes more than 1 s, so updates slow down.
+  The two alignment-based freeze variants measured earlier were worse still
+  (`evidence.md`, "Long-utterance window").
 
 ### D6. Preview results and messages
 
@@ -234,22 +228,19 @@ New file `core/client/output/live_panel.py`, beside `edit_panel.py`.
   pipeline and the panel are thin adapters.
 - Dependency injection by a plain callable (`transcribe`) instead of an engine
   interface.
-- No new config beyond `dictation_mode`. Interval, agreement, holdback and
-  window are module constants (YAGNI: the eval fixed them).
-- Expected size: `live_preview.py` about 130 lines, `live_panel.py` about 110
+- No new config beyond `dictation_mode`. Interval, agreement and holdback are
+  module constants (YAGNI: the eval fixed them).
+- Expected size: `live_preview.py` about 100 lines, `live_panel.py` about 110
   lines, about 60 changed lines elsewhere, plus tests.
 
 ## Risks / Trade-offs
 
 - GPU load while holding in live mode: one pass per second (p95 0.22-0.46 s up
-  to 30 s). Hold mode has no extra load.
-- A final that arrives during a pass waits for it (at most one pass, under 1 s
-  with the window rule).
+  to 30 s; about 1.3-1.4 s for 60-74 s). Hold mode has no extra load.
+- A final that arrives during a pass waits for it (at most one pass: under
+  0.5 s up to 30 s, about 1.4 s for a 70 s recording).
 - Preview text is raw model text; the pasted final is formatted. Small
   differences in punctuation and spacing at release are expected.
-- A forced freeze (segment over 25 s with no agreed pause) can change text the
-  user already saw as committed. Measured: 4 times over 4 clips of 30-74 s on
-  C, 0 times on D.
 - The panel cannot be checked for focus behaviour without the running app;
   that is an Acceptance item for the user.
 - One worker serves every socket. Partial passes for one client delay work for
@@ -265,4 +256,5 @@ New file `core/client/output/live_panel.py`, beside `edit_panel.py`.
 
 ## Open Questions
 
-None. The a3 + w15 pairing was measured before coding (`evidence.md`).
+None. The a3 + w15 pairing was measured before coding and removed after the
+real-model e2e run (D5, `evidence.md`).

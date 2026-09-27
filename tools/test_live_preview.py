@@ -1,9 +1,11 @@
 # coding: utf-8
-"""live_preview.py 纯规则测试：提交规则（Agreement）与长句窗口规则（LiveTask）。
+"""live_preview.py 纯规则测试：提交规则（Agreement）与 LiveTask 的整段转写。
 
 只依赖 numpy / re / difflib，不加载模型。按 spec.md 的场景原文断言，用真实的
 参考实现（capswriter-ab/stream_eval/run_eval.py 的 Agreement，agree=3、
-holdback=4、numeral_hold=True、align=True）逐条核对过期望值。
+holdback=4、numeral_hold=True、align=True）逐条核对过期望值。长句冻结窗口已从
+设计里去掉（真实模型跑长句时，26 秒处的强制冻结会用错误的 head 转写替换掉正确的
+已提交文本），现在每次 pass 都转写目前为止的全部音频，已提交文本只增不改。
 """
 from pathlib import Path
 import sys
@@ -22,18 +24,6 @@ def make_work(task_id='t1', socket_id='s1'):
     return Work(source='mic', data=b'', offset=0.0, overlap=0.0, task_id=task_id,
                 socket_id=socket_id, is_final=False, time_start=0.0, time_submit=0.0,
                 context='', language='auto')
-
-
-def make_tone(duration_s, quiet_at=None, quiet_dur=1.0):
-    """造一段等幅音调；quiet_at 秒起插入 quiet_dur 秒静音，模拟一次真实停顿。"""
-    n = int(duration_s * live_preview.SR)
-    t = np.arange(n, dtype=np.float32) / live_preview.SR
-    audio = (0.5 * np.sin(2 * np.pi * 220.0 * t)).astype(np.float32)
-    if quiet_at is not None:
-        lo = int(quiet_at * live_preview.SR)
-        hi = int((quiet_at + quiet_dur) * live_preview.SR)
-        audio[lo:hi] = 0.0
-    return audio
 
 
 class ScriptedTranscribe:
@@ -116,69 +106,30 @@ class AgreementTests(unittest.TestCase):
         self.assertEqual(agreement.committed, '今天下午三点开会')
 
 
-class WindowRuleTests(unittest.TestCase):
-    """长句窗口规则：LiveTask.step() 里 WINDOW=15s / FORCE=25s 的冻结判断。"""
+class LiveTaskTests(unittest.TestCase):
+    """LiveTask.step()：没有冻结窗口后，每次 pass 都转写目前为止的全部音频。"""
 
-    def test_freeze_keeps_agreed_committed(self):
-        # Given: 已提交"你好"，一段16秒的实时片段在搜索窗口内有一次真实停顿
+    def test_step_transcribes_all_audio_so_far_and_committed_only_grows(self):
+        # Given: 一个持续说话的live任务，每次都新增1秒音频
         task = live_preview.LiveTask(make_work())
-        task.agreement.committed = '你好'
-        task.agreement.keys = ['你', '好']
-        audio = make_tone(16.0, quiet_at=10.0, quiet_dur=1.0)
-        task.feed(audio)
-        transcribe = ScriptedTranscribe(['你好在吗', '现在几点'])
-        # When: 停顿前的转写以已提交单元开头
-        committed, tentative = task.step(transcribe)
-        # Then: 已提交文本不变，转写余下部分被追加；下一段只覆盖停顿之后的新音频
-        self.assertEqual(committed, '你好在吗')
-        self.assertEqual(len(transcribe.calls), 2)
-        self.assertTrue(10.0 * live_preview.SR <= task.seg_start <= 11.0 * live_preview.SR)
-        self.assertEqual(transcribe.calls[1], len(audio) - task.seg_start)
-
-    def test_freeze_waits_when_head_disagrees(self):
-        # Given: 已提交"你好"，同样16秒的片段有停顿，但段长未超过FORCE=25s
-        task = live_preview.LiveTask(make_work())
-        task.agreement.committed = '你好'
-        task.agreement.keys = ['你', '好']
-        audio = make_tone(16.0, quiet_at=10.0, quiet_dur=1.0)
-        task.feed(audio)
-        transcribe = ScriptedTranscribe(['不好意思打扰了', '你好我想问一下'])
-        # When: 停顿前的转写不以已提交单元开头
-        committed, tentative = task.step(transcribe)
-        # Then: 不冻结，已提交文本不变，下一段仍覆盖整个未冻结片段
-        self.assertEqual(committed, '你好')
-        self.assertEqual(task.seg_start, 0)
-        self.assertEqual(len(transcribe.calls), 2)
-        self.assertEqual(transcribe.calls[1], len(audio))
-
-    def test_forced_freeze_replaces_head(self):
-        # Given: 已提交"你好"，一段26秒的片段超过FORCE=25s，搜索窗口内有一次停顿
-        task = live_preview.LiveTask(make_work())
-        task.agreement.committed = '你好'
-        task.agreement.keys = ['你', '好']
-        audio = make_tone(26.0, quiet_at=10.0, quiet_dur=1.0)
-        task.feed(audio)
-        transcribe = ScriptedTranscribe(['今天天气不错我们出去走走吧', '好呀就这么定了'])
-        # When: 停顿前的转写不以已提交单元开头，但段长已超过强制阈值
-        committed, tentative = task.step(transcribe)
-        # Then: 依然在该帧冻结，已提交文本被这段转写整体替换
-        self.assertEqual(committed, '今天天气不错我们出去走走吧')
-        self.assertTrue(10.0 * live_preview.SR <= task.seg_start <= 11.0 * live_preview.SR)
-
-    def test_pass_audio_is_bounded(self):
-        # Given: 与强制冻结相同的26秒片段
-        task = live_preview.LiveTask(make_work())
-        task.agreement.committed = '你好'
-        task.agreement.keys = ['你', '好']
-        audio = make_tone(26.0, quiet_at=10.0, quiet_dur=1.0)
-        task.feed(audio)
-        transcribe = ScriptedTranscribe(['今天天气不错我们出去走走吧', '好呀就这么定了'])
-        # When: 触发一次强制冻结
-        task.step(transcribe)
-        # Then: 冻结后的正式一遍只覆盖冻结点之后的新音频，而不是整段26秒
-        main_pass_len = transcribe.calls[1]
-        self.assertEqual(main_pass_len, len(audio) - task.seg_start)
-        self.assertLess(main_pass_len, len(audio), '一遍的音频量必须有界，不能随录音总长增长')
+        transcribe = ScriptedTranscribe([
+            '今天下午三点开会',
+            '今天下午三点开会讨论',
+            '今天下午三点开会讨论方案',
+            '今天下午三点开会讨论方案大家',
+        ])
+        committed_history = []
+        for _ in range(4):
+            task.feed(np.zeros(live_preview.SR, dtype=np.float32))
+            committed, tentative = task.step(transcribe)
+            committed_history.append(committed)
+        # Then: 每一次pass转写的都是"目前为止收到的全部音频"，样本数与累计喂入量相等
+        self.assertEqual(transcribe.calls, [live_preview.SR * n for n in (1, 2, 3, 4)])
+        # Then: 已提交文本只会变长、不会被后面的pass改写替换（没有冻结窗口就没有强制替换）
+        for prev, cur in zip(committed_history, committed_history[1:]):
+            self.assertTrue(cur.startswith(prev),
+                            f'已提交文本必须只增不改: {prev!r} -> {cur!r}')
+        self.assertTrue(committed_history[-1], '连续四次一致的转写应该已经提交了一些内容')
 
 
 if __name__ == '__main__':
