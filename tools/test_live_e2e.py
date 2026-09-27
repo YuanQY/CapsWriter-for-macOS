@@ -2,7 +2,7 @@
 """端到端回归：真实 ws_recv/ws_send + 真实 WorkHandler.loop + 真实 qwen_asr_mlx 引擎。
 
 只在本机已经准备好本地 8bit 模型目录时运行；否则整份跳过并给出明确提示。音频来自
-`say -v Eddy`（zh_CN）合成到临时目录，从不使用用户录音。断言的是边界（至少多少条
+`say -v Tingting`（zh_CN）合成到临时目录，从不使用用户录音。断言的是边界（至少多少条
 预览、多快出现第一条预览、有没有出现在日志/标准输出里），不是精确计数，因为一遍
 的耗时会受机器上其它 GPU 占用影响。
 """
@@ -56,15 +56,15 @@ _SAY_AVAILABLE = shutil.which('say') is not None
 
 
 def _synthesize(text: str, out_dir: Path, name: str) -> np.ndarray:
-    """用系统 say -v Eddy（zh_CN）把文本合成为 16kHz 单声道 float32 数组。
+    """用系统 say -v Tingting（zh_CN）把文本合成为 16kHz 单声道 float32 数组。
 
-    Eddy 语音包在个别机器上可能未完整下载，此时 say 会静默生成一份几乎无声的音频；
+    个别语音包在某些机器上可能未完整下载，此时 say 会静默生成一份几乎无声的音频；
     这里用一个宽松的最短时长检查兜底，不满足就明确跳过而不是产生一个没有真实语音的
     伪测试。
     """
     wav_path = out_dir / f'{name}.wav'
     subprocess.run(
-        ['say', '-v', 'Eddy', '-o', str(wav_path), '--data-format=LEI16@16000', text],
+        ['say', '-v', 'Tingting', '-o', str(wav_path), '--data-format=LEI16@16000', text],
         check=True, capture_output=True,
     )
     with wave.open(str(wav_path), 'rb') as f:
@@ -78,8 +78,8 @@ def _synthesize(text: str, out_dir: Path, name: str) -> np.ndarray:
     min_expected = 0.15 * han_count
     if duration < min_expected:
         raise unittest.SkipTest(
-            f"say -v Eddy 合成的语音只有 {duration:.3f}s（文本含{han_count}个汉字，"
-            f"至少应有{min_expected:.1f}s），疑似该机器上 Eddy 的中文语音包未完整下载，"
+            f"say -v Tingting 合成的语音只有 {duration:.3f}s（文本含{han_count}个汉字，"
+            f"至少应有{min_expected:.1f}s），疑似该机器上 Tingting 的中文语音包未完整下载，"
             "跳过端到端用例"
         )
     return audio
