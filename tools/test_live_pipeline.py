@@ -16,7 +16,7 @@ import numpy as np
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 
-from core.server.schema import Work
+from core.server.schema import Result, Work
 from core.server.state import WorkerState
 from core.server.worker.qwen_mlx_runner_pipeline import QwenMLXRunnerPipeline
 from core.server.worker.work_handler import WorkHandler
@@ -75,6 +75,20 @@ class ScriptedRecognizer:
 
     def cancel_task(self, task_id):
         self.cancelled.append(task_id)
+
+
+class NoLiveTickPipeline:
+    """站在其它引擎（如 WorkPipeline）位置的替身：真实的那些管线只有 process()，
+    没有 live_tick，B1的"另一个引擎不发预览"规则要靠 hasattr 分支来保证。"""
+    def __init__(self):
+        self.calls = []
+
+    def process(self, work):
+        self.calls.append(work)
+        if not work.is_final:
+            return None
+        return Result(task_id=work.task_id, socket_id=work.socket_id, source=work.source,
+                      is_final=True, text='你好世界')
 
 
 def live_call_count(recognizer):
@@ -198,10 +212,18 @@ class PipelineLiveTests(unittest.TestCase):
         pipeline = self.make_pipeline(recognizer)
         pipeline.process(make_work(live=True, samples=np.zeros(SR, dtype=np.float32)))
         # When: 该次pass抛出异常
-        result = pipeline.live_tick()
+        with self.assertLogs('server', level='DEBUG') as cm:
+            result = pipeline.live_tick()
         # Then: 预览调用返回None，异常被吞掉，且这一秒的预算已经用掉（不会立刻重试）
         self.assertIsNone(result)
         self.assertEqual(pipeline.live['t1'].passes, 1, '失败的pass也要占用一次预算')
+        # Then: 异常记录只有task_id前缀和异常类型，不包含任何已提交/暂定/脚本化文本
+        error_lines = [line for line in cm.output if line.startswith('ERROR:')]
+        self.assertEqual(len(error_lines), 1)
+        self.assertIn('t1', error_lines[0])
+        self.assertIn('RuntimeError', error_lines[0])
+        for leaked in ('你好世界', '你好', 'boom'):
+            self.assertNotIn(leaked, error_lines[0], '异常记录不得包含已提交/暂定/脚本化文本')
         calls_after_failure = live_call_count(recognizer)
         # When: 只再喂入不到1秒的新音频就立刻再tick
         pipeline.process(make_work(live=True, samples=np.zeros(SR // 2, dtype=np.float32)))
@@ -325,6 +347,54 @@ class WorkHandlerLiveTests(unittest.TestCase):
                 break
         self.assertEqual(len(results), 1)
         self.assertTrue(results[0].is_final)
+
+    def test_other_engine_pipeline_sends_no_partials(self):
+        # Given: 管线站在其它引擎（不是qwen_asr_mlx）的位置，只有process()，没有
+        # live_tick——真实的WorkPipeline就是这个形状。live=True的包对它没有特殊意义。
+        pipeline = NoLiveTickPipeline()
+        live_work = make_work(live=True, samples=np.zeros(SR, dtype=np.float32))
+        final_work = make_work(live=True, final=True)
+        incoming = ScriptedQueue([
+            ('value', live_work), ('empty',), ('value', final_work), ('empty',), ('exit',),
+        ])
+        handler = WorkHandler(incoming, queue.Queue(), ['s1'], WorkerState())
+        handler.pipeline = pipeline
+        # When: 运行真实的工作循环（捕获server日志，确认没有因为缺 live_tick 出错）
+        with self.assertLogs('server', level='DEBUG') as cm:
+            handler.loop()
+        # Then: 只有final这一条结果到达queue_out，没有任何预览
+        results = []
+        while True:
+            try:
+                results.append(handler.queue_out.get_nowait())
+            except queue.Empty:
+                break
+        self.assertEqual(len(results), 1)
+        self.assertTrue(results[0].is_final)
+        # Then: 没有任何error级别的记录（hasattr分支不能让缺 live_tick 的管线出错）
+        self.assertFalse(any(line.startswith('ERROR:') for line in cm.output),
+                         '没有 live_tick 的管线不应该让工作循环报错')
+
+    def test_cleanup_via_work_handler_drops_live_task(self):
+        # Given: 一个真实的WorkHandler；live任务和它的session都通过真实process()
+        # 创建（不是直接调pipeline.cleanup_tasks），对应socket 's1'
+        recognizer = ScriptedRecognizer()
+        state = WorkerState()
+        pipeline = QwenMLXRunnerPipeline(recognizer, state=state)
+        sockets_id = ['s1']
+        handler = WorkHandler(queue.Queue(), queue.Queue(), sockets_id, state)
+        handler.pipeline = pipeline
+        pipeline.process(make_work(socket_id='s1', live=True,
+                                    samples=np.zeros(SR, dtype=np.float32)))
+        self.assertIn('t1', pipeline.live)
+        self.assertIn('t1', state.sessions)
+        # When: socket 's1' 断连（从sockets_id移除），触发真实的handler.cleanup()
+        sockets_id.remove('s1')
+        handler.cleanup()
+        # Then: live任务和session都被清理，之后的tick也拿不到预览
+        self.assertNotIn('t1', pipeline.live)
+        self.assertNotIn('t1', state.sessions)
+        self.assertIsNone(pipeline.live_tick())
 
     def test_empty_preview_reaches_no_queue_out(self):
         # Given: 只有一个live任务，其预览pass的转写结果是空字符串
