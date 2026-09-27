@@ -73,7 +73,9 @@ SHALL NOT end with punctuation.
 - **WHEN** the passes are "我刚用Cloud", "我刚用cloud code把这个" and
   "我刚用cloud code把这个脚本重构"
 - **THEN** nothing is committed, and after a fourth pass
-  "我刚用Cloud Code把这个脚本重构了一下" the committed text is "我刚用Cloud"
+  "我刚用Cloud Code把这个脚本重构了一下" the committed units are 我, 刚, 用 and
+  Cloud (a Latin word keeps the space after it, so the committed text is
+  "我刚用Cloud ")
 
 #### Scenario: An open numeral run waits
 - **WHEN** the passes are "价格是一万五千块钱左右", "价格是一万五千块钱左右吧" and

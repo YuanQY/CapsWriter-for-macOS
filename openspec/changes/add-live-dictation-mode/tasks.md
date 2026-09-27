@@ -66,7 +66,7 @@ test runs from the real entry point without replacing a real dependency.
 
 Test notes:
 
-- `test_live_e2e.py` makes its audio with `say -v Eddy` (zh_CN) into a temp
+- `test_live_e2e.py` makes its audio with `say -v Tingting` (Mandarin; the Eddy and Flo zh_CN voices produce near-silent Chinese audio on this machine) into a temp
   file, so no user recording is used. It sets `HF_HUB_OFFLINE=1` and skips
   with a clear message unless the local 8-bit model directory exists; it never
   lets the engine fall back to a hub id (`config_server.py:110`). It sends
