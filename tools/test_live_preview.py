@@ -93,6 +93,29 @@ class AgreementTests(unittest.TestCase):
         # Then: 暂定文本隐藏了本次转写自己的结尾标点，句中的逗号则保留
         self.assertEqual(shown, '你好，世界')
 
+    def test_glued_latin_words_across_passes_get_a_space(self):
+        # Given: 前三次转写一致，"dessert"后紧跟逗号（两者之间没有空格）；
+        # "dessert"不在holdback范围内，被提交，逗号还悬在暂定文本里
+        agreement = live_preview.Agreement()
+        for text in ('我们聊到了dessert，好吃吗',
+                     '我们聊到了dessert，好吃吗还不错',
+                     '我们聊到了dessert，好吃吗还不错的样子'):
+            agreement.update(text)
+        self.assertEqual(agreement.committed, '我们聊到了dessert',
+                          '"dessert"应该已提交，且提交时后面没有跟着空格')
+        # When: 后面的pass识别结果变了：逗号消失，"dessert"后面直接接了新单词"you"
+        shown = agreement.update('我们聊到了dessert you know 好吃吗还不错')
+        # Then: 暂定文本里"dessert"和"you"之间补了一个空格，而不是粘连成"dessertyou"
+        self.assertIn('dessert you know', shown)
+        self.assertNotIn('dessertyou', shown)
+        # When: 再喂够几次一致的pass，让"you"也被提交
+        agreement.update('我们聊到了dessert you know 好吃吗还不错的样子')
+        agreement.update('我们聊到了dessert you know 好吃吗还不错的样子啊')
+        # Then: 提交后的文本里"dessert"和"you"之间也有空格，不会粘连，且这个空格
+        # 一旦提交就不会再被后面的pass改掉（已提交文本只增不改）
+        self.assertIn('dessert you', agreement.committed)
+        self.assertNotIn('dessertyou', agreement.committed)
+
     def test_commits_on_third_agreeing_pass(self):
         # Given: 同一段文本连续转写两次
         agreement = live_preview.Agreement()

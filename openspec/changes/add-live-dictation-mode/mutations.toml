@@ -246,6 +246,18 @@ old  = '''u.casefold() if'''
 new  = '''u if'''
 
 [[mutation]]
+name = "committed Latin words are glued"
+file = "core/server/worker/live_preview.py"
+old  = '''self.committed = _join(self.committed, ''.join(tail[:m]))'''
+new  = '''self.committed = self.committed + ''.join(tail[:m])'''
+
+[[mutation]]
+name = "shown Latin words are glued"
+file = "core/server/worker/live_preview.py"
+old  = '''return _join(self.committed, ''.join(tentative))'''
+new  = '''return self.committed + ''.join(tentative)'''
+
+[[mutation]]
 name = "pass reads only the last second"
 file = "core/server/worker/live_preview.py"
 old  = '''shown = self.agreement.update(transcribe(audio))'''
