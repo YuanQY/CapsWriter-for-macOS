@@ -220,6 +220,11 @@ class ResultProcessor:
         if message is None:
             return
 
+        # live 预览：只更新悬浮面板，不进日志/日记/剪贴板/UDP，不消耗 last_case
+        if message.preview:
+            from core.client.output import live_panel
+            live_panel.show(message.text, message.text_tentative)
+            return
 
         # 使用 text 字段（简单拼接结果，用于语音输入）
         text = message.text
@@ -228,6 +233,8 @@ class ResultProcessor:
         trace_context = None
 
         if message.is_final:
+            from core.client.output import live_panel
+            live_panel.hide()  # 最终结果到达，收起预览面板（从未 show() 过也是空操作）
             trace_context = self.state.pop_trace_context_by_task_id(message.task_id)
             logger.info(f"收到最终识别结果: {text}, 时延: {delay:.2f}s")
             if trace_context is not None:

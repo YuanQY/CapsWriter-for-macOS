@@ -175,6 +175,10 @@ class WorkHandler:
                 #     continue
 
                 result = self.pipeline.process(work)
+                if result is None and self.buffer.is_empty and hasattr(self.pipeline, 'live_tick'):
+                    # 队列已经排空的间隙里跑一次实时预览pass；复用cleanup_tasks同款
+                    # 的可选钩子模式，WorkPipeline没有live_tick就什么都不做。
+                    result = self.pipeline.live_tick()
                 if result is None:
                     self.cleanup()
                     continue

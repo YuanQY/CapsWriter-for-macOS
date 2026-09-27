@@ -20,6 +20,7 @@ from core.server.schema import Result, Work
 from core.server.state import WorkerState, console
 from core.tools.token_sync import sync_tokens_from_text
 from . import logger
+from .live_preview import LiveTask
 
 
 class QwenMLXRunnerPipeline:
@@ -31,6 +32,8 @@ class QwenMLXRunnerPipeline:
         self.aligner = aligner
         self.formatter = TextFormatter(punc_model)
         self.state = state or WorkerState()
+        # live 模式的实时预览任务：task_id -> LiveTask，只在 qwen_asr_mlx 引擎下使用。
+        self.live: dict[str, LiveTask] = {}
 
     def process(self, work: Work) -> Optional[Result]:
         """
@@ -53,6 +56,18 @@ class QwenMLXRunnerPipeline:
             f"Qwen MLX Runner 收到音频增量: task={work.task_id[:8]}, "
             f"samples={len(samples)}, final={work.is_final}, source={work.source}"
         )
+
+        if work.is_final:
+            # final 之前先失效该 task_id 的实时预览：pop 之后 live_tick 不会再为它
+            # 构造预览结果，不会有预览排在 final 后面发给客户端。
+            self.live.pop(work.task_id, None)
+        elif work.live:
+            # pipeline 自己单独持有一份音频副本供预览 pass 使用，不动 Runner 内部
+            # 为真正 task_id 维护的缓冲，保证 final 仍是与 hold 模式一样的调用。
+            task = self.live.get(work.task_id)
+            if task is None:
+                task = self.live[work.task_id] = LiveTask(work)
+            task.feed(samples)
 
         runner_result = self.recognizer.feed_audio_patch(
             task_id=work.task_id,
@@ -99,10 +114,61 @@ class QwenMLXRunnerPipeline:
         )
         return result
 
+    def live_tick(self) -> Optional[Result]:
+        """在没有真实工作单元可处理的间隙里，为最早到期的 live 任务跑一次预览 pass。"""
+        for task_id, task in self.live.items():
+            if task.due():
+                return self._run_live_pass(task_id, task)
+        return None
+
+    def _run_live_pass(self, task_id: str, task: LiveTask) -> Optional[Result]:
+        """跑一次预览 pass 并组装预览 Result；不经过 formatter，不落任何文本日志。"""
+        work = task.work
+
+        def transcribe(segment: np.ndarray) -> str:
+            # 每次 pass 用一个一次性 task_id，Runner 在 is_final=True 时立刻吐出
+            # 结果并丢弃这个 task_id 的状态，不会污染真正 task_id 的缓冲。
+            runner_result = self.recognizer.feed_audio_patch(
+                task_id=f"{task_id}#live{task.passes}",
+                audio=segment,
+                sample_rate=16000,
+                is_final=True,
+                context=work.context,
+                language=work.language,
+                source=work.source,
+            )
+            return runner_result.text.strip()
+
+        try:
+            committed, tentative = task.step(transcribe)
+        except Exception as exc:
+            # 预览失败不能影响录音和 final：只记录异常类型和 task_id，绝不记录文本。
+            logger.error(f"实时预览 pass 失败: task={task_id[:8]}, exc_type={type(exc).__name__}")
+            return None
+
+        if not committed and not tentative:
+            return None
+
+        now = time.time()
+        return Result(
+            task_id=task_id,
+            socket_id=work.socket_id,
+            source=work.source,
+            duration=task.duration,
+            time_start=work.time_start,
+            time_submit=now,
+            time_complete=now,
+            text=committed,
+            text_tentative=tentative,
+            is_final=False,
+            preview=True,
+        )
+
     def cleanup_tasks(self, stale_task_ids: list[str]) -> None:
-        """Worker 清理断连 session 时，同步释放 Runner 内部缓冲。"""
+        """Worker 清理断连 session 时，同步释放 Runner 内部缓冲和实时预览状态。"""
         for task_id in stale_task_ids:
             self.recognizer.cancel_task(task_id)
+            self.live.pop(task_id, None)
 
     @staticmethod
     def _fill_fallback_tokens(result: Result) -> None:

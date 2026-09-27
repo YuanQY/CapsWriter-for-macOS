@@ -53,6 +53,10 @@ class ClientConfig:
     # 系统自动切到耳机麦）。找不到内建麦时仍回退跟随默认输入。
     macos_mic_device = 'default'
 
+    # 听写模式：'hold'（默认，长按录音结束才出结果）| 'live'（边说边出预览，
+    # 仅 qwen_asr_mlx 引擎支持；其它取值一律按 'hold' 处理）。改后需 `capswriter restart`。
+    dictation_mode = 'hold'
+
     paste        = False        # 是否以写入剪切板然后模拟 Ctrl-V 粘贴的方式输出结果
     restore_clip = True         # 模拟粘贴后是否恢复剪贴板
     paste_apps   = ['WeiXin.exe', 'Telegram.exe']  # 匹配时强制粘贴
