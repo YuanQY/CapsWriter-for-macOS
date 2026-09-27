@@ -3,7 +3,7 @@
 
 覆盖 B1-B3（录音器按 dictation_mode 给每条 AudioMessage 打 live 标记）、
 B10（预览文本绝不可进入任何日志）、B12（客户端预览面板：非激活样式、
-提交/暂定文本配色、final 隐藏、AUTO_HIDE 自动隐藏）。
+提交/暂定文本配色与下划线、长文本高度封顶、final 隐藏、AUTO_HIDE 自动隐藏）。
 
 安全边界：
 - 录音器测试只连接本文件自建的本地抓包 WebSocket 服务端（127.0.0.1:0），
@@ -340,10 +340,12 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
                经 to_json/from_dict 往返
         When: 交给真实 ResultProcessor._handle_message，并把主线程 RunLoop 推进
         Then: 真实 live_panel 弹出非激活面板：不可成为 key window、忽略鼠标事件、
-              不因失活隐藏；已提交文本用 labelColor，暂定文本用 secondaryLabelColor
+              不因失活隐藏；已提交文本用 labelColor 无下划线，暂定文本用
+              systemBlueColor 并加单下划线
         """
         from AppKit import (
-            NSColor, NSForegroundColorAttributeName, NSWindowStyleMaskNonactivatingPanel,
+            NSColor, NSForegroundColorAttributeName, NSUnderlineStyleAttributeName,
+            NSWindowStyleMaskNonactivatingPanel,
         )
 
         committed, tentative = '你好', '世界'
@@ -372,8 +374,14 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
             NSForegroundColorAttributeName, 0, None)
         tentative_color, _ = attributed.attribute_atIndex_effectiveRange_(
             NSForegroundColorAttributeName, len(committed), None)
+        committed_underline, _ = attributed.attribute_atIndex_effectiveRange_(
+            NSUnderlineStyleAttributeName, 0, None)
+        tentative_underline, _ = attributed.attribute_atIndex_effectiveRange_(
+            NSUnderlineStyleAttributeName, len(committed), None)
         self.assertEqual(committed_color, NSColor.labelColor())
-        self.assertEqual(tentative_color, NSColor.secondaryLabelColor())
+        self.assertEqual(tentative_color, NSColor.systemBlueColor())
+        self.assertFalse(committed_underline, '已提交文本不应有下划线')
+        self.assertEqual(tentative_underline, 1, '暂定文本必须有单下划线')
 
     async def test_long_mixed_text_label_is_not_clipped(self):
         """B12（补充 review #1）：中英混排长文本不能被裁掉最后一行
@@ -406,16 +414,49 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
             self.live_panel._panel.frame().size.height, one_line_panel_height,
             '长文本应让面板变高（多行布局），而不是停在单行高度')
 
+    async def test_panel_height_is_capped_for_long_text(self):
+        """B12（补充：长时间 live 听写不能把面板撑出屏幕）
+        Given: 一段远超 _MAX_SCREEN_RATIO 封顶高度的重复长文本（用重复次数保证
+               不管测试机屏幕大小，全文本高度都明显超过封顶）
+        When: show() 之后
+        Then: 面板高度封顶在 屏幕可视高度 * _MAX_SCREEN_RATIO（留浮点容差）；
+              label 仍按全文本高度贴底摆放（底边在 _MARGIN），故其高度大于面板
+              高度——证明确有内容被裁剪掉，而贴底的最新（暂定）文字留在可见区域
+        """
+        from AppKit import NSScreen
+
+        long_text = '这是用来把面板高度撑过封顶上限、验证裁剪是否生效的重复句子。' * 200
+        self.live_panel.show(long_text, '')
+        _pump_main_runloop(0.2)
+
+        screen = NSScreen.mainScreen().visibleFrame()
+        cap = screen.size.height * self.live_panel._MAX_SCREEN_RATIO
+        margin = self.live_panel._MARGIN
+        panel = self.live_panel._panel
+        label = self.live_panel._label
+
+        self.assertLessEqual(
+            panel.frame().size.height, cap + 2 * margin + 0.5,
+            '面板高度必须封顶，不能随文本一直变高')
+        self.assertGreater(
+            label.frame().size.height, panel.frame().size.height,
+            '前置条件：label 全文本高度必须超过面板高度，才谈得上发生了裁剪')
+        self.assertAlmostEqual(
+            label.frame().origin.y, margin, delta=0.5,
+            msg='label 必须仍贴底摆放，最新（暂定）文字才会留在可见区域')
+
     async def test_utf16_color_ranges_across_surrogate_pair(self):
         """B12（补充 review #10）：委托/暂定分色不能按 Python 字符数算下标
         Given: committed='好😀'（😀 在 Python 里 len 是 1，但在 NSString/UTF-16 里
                是代理对，占 2 个 code unit），tentative='尾巴'
         When: show() 之后按 UTF-16 下标读取 attributedStringValue 的颜色属性
-        Then: 首字符"好"是 labelColor；暂定部分的首字符"尾"与末字符"巴"都是
-              secondaryLabelColor（若按 Python 长度切 NSRange，代理对会把分界点
-              切到 😀 中间，导致这三处至少一处colour 算错或缺失）
+        Then: 首字符"好"是 labelColor 且无下划线；暂定部分的首字符"尾"与末字符
+              "巴"都是 systemBlueColor 且都带单下划线（若按 Python 长度切 NSRange，
+              代理对会把分界点切到 😀 中间，导致这几处至少一处颜色/下划线算错或缺失）
         """
-        from AppKit import NSColor, NSForegroundColorAttributeName
+        from AppKit import (
+            NSColor, NSForegroundColorAttributeName, NSUnderlineStyleAttributeName,
+        )
 
         committed, tentative = '好😀', '尾巴'
         self.live_panel.show(committed, tentative)
@@ -429,10 +470,17 @@ class LivePanelTests(unittest.IsolatedAsyncioTestCase):
             attrs, _ = attributed.attributesAtIndex_effectiveRange_(index, None)
             return attrs.get(NSForegroundColorAttributeName)
 
+        def underline_at(index):
+            attrs, _ = attributed.attributesAtIndex_effectiveRange_(index, None)
+            return attrs.get(NSUnderlineStyleAttributeName)
+
         self.assertEqual(color_at(0), NSColor.labelColor(), '"好"应是已提交色')
+        self.assertFalse(underline_at(0), '"好"不应有下划线')
         tentative_start = ns_length - len(tentative)  # "尾" 的真实 UTF-16 起始下标
-        self.assertEqual(color_at(tentative_start), NSColor.secondaryLabelColor(), '"尾"应是暂定色')
-        self.assertEqual(color_at(ns_length - 1), NSColor.secondaryLabelColor(), '"巴"应是暂定色')
+        self.assertEqual(color_at(tentative_start), NSColor.systemBlueColor(), '"尾"应是暂定色')
+        self.assertEqual(underline_at(tentative_start), 1, '"尾"应有单下划线')
+        self.assertEqual(color_at(ns_length - 1), NSColor.systemBlueColor(), '"巴"应是暂定色')
+        self.assertEqual(underline_at(ns_length - 1), 1, '"巴"应有单下划线')
 
     async def test_show_does_not_activate_app(self):
         """B12（补充 spec 场景 "Focus stays in the target app"）

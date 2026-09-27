@@ -192,10 +192,10 @@ old  = '''    _panel.orderFrontRegardless()  #'''
 new  = '''    _panel.orderFrontRegardless(); __import__('AppKit').NSApp.activateIgnoringOtherApps_(True)  #'''
 
 [[mutation]]
-name = "committed text drawn grey"
+name = "committed text drawn blue"
 file = "core/client/output/live_panel.py"
 old  = '''NSForegroundColorAttributeName: NSColor.labelColor()})'''
-new  = '''NSForegroundColorAttributeName: NSColor.secondaryLabelColor()})'''
+new  = '''NSForegroundColorAttributeName: NSColor.systemBlueColor()})'''
 
 [[mutation]]
 name = "stale auto-hide hides a newer panel"
@@ -269,10 +269,23 @@ old  = '''    text_h = max(_MIN_LABEL_H, _label.cell().cellSizeForBounds_('''
 new  = '''    text_h = _MIN_LABEL_H or max(_MIN_LABEL_H, _label.cell().cellSizeForBounds_('''
 
 [[mutation]]
+name = "panel height is not capped"
+file = "core/client/output/live_panel.py"
+old  = '''    content_h = min(text_h + 2 * _MARGIN, screen.size.height * _MAX_SCREEN_RATIO)'''
+new  = '''    content_h = text_h + 2 * _MARGIN'''
+
+[[mutation]]
 name = "tentative text drawn in the normal colour"
 file = "core/client/output/live_panel.py"
-old  = '''NSForegroundColorAttributeName: NSColor.secondaryLabelColor()}))'''
-new  = '''NSForegroundColorAttributeName: NSColor.labelColor()}))'''
+old  = '''                        NSForegroundColorAttributeName: NSColor.systemBlueColor(),'''
+new  = '''                        NSForegroundColorAttributeName: NSColor.labelColor(),'''
+
+[[mutation]]
+name = "tentative text has no underline"
+file = "core/client/output/live_panel.py"
+old  = '''                        NSForegroundColorAttributeName: NSColor.systemBlueColor(),
+                        NSUnderlineStyleAttributeName: NSUnderlineStyleSingle}))'''
+new  = '''                        NSForegroundColorAttributeName: NSColor.systemBlueColor()}))'''
 
 [[mutation]]
 name = "work handler ticks a pipeline without live_tick"
