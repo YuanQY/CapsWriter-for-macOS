@@ -169,7 +169,7 @@ edits (orchestrator). 9.6 and 9.7 wait on the merge.
 - [X]  9.5 Compare the current and the pause rule on the same passes of public layers A, B and C (commit error, rewrites, commit lag); result in `evidence.md`, "Pause rule".
 - [X]  9.6 Simplify pass over the group 9 code diff (run by the lane in a fresh subagent: -16 changed lines; the `limit and` guard kept because an all-punctuation tail would index out of range).
 - [ ]  9.7 Opus delta acceptance over 67efc8b..HEAD (round 5). Not waited for: on 2026-09-27 the user confirmed the group 9 behaviour in the app, marked the open rows of `acceptance.md` PASS, and chose to archive before round 5 returned; its report is for reference only. Round 5 returned `Verdict: NEEDS-HUMAN` with no FAIL (report in `acceptance-rounds-4-5.md`).
-- [ ]  9.8 Round-5 non-blocking findings, after the archive at the user's request (tests and docs only, no production change): pin the `limit and` guard (H8), pause detection on three passes by an assertion (H2), and the space before tentative text at the client call site (H4), each with a `mutations.toml` row; fix the 9.4 wording and the 5C call-site list.
+- [X]  9.8 (tests 8f7bead, docs f4df4a9; Opus review of f4df4a9..05e6be0: PASS, the 3 new rows CAUGHT) Round-5 non-blocking findings, after the archive at the user's request (tests and docs only, no production change): pin the `limit and` guard (H8), pause detection on three passes by an assertion (H2), and the space before tentative text at the client call site (H4), each with a `mutations.toml` row; fix the 9.4 wording and the 5C call-site list.
 
 ## Acceptance
 
